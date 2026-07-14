@@ -20,7 +20,9 @@ import { closeRemoteEditor } from "@/features/EditorSlice/remoteEditorSlice";
 import { defaultCodeArr } from "@/data/defaultCode";
 
 const CodeEditor = () => {
-  const BACK_URL = import.meta.env.VITE_API_URL ?? import.meta.env.VITE_B_URL ?? window.location.origin;
+  const BACK_URL = import.meta.env.PROD
+    ? window.location.origin
+    : import.meta.env.VITE_API_URL ?? import.meta.env.VITE_B_URL ?? window.location.origin;
   const dispatch = useDispatch();
   const location = useLocation();
   const navigate = useNavigate();
@@ -65,8 +67,8 @@ const CodeEditor = () => {
     const socket = io(`${BACK_URL}`, {
       // user try to connect with the socket server
       withCredentials: true,
-      "force new connection": true,
-      reconnectionAttempts: "Infinity",
+      forceNew: true,
+      reconnectionAttempts: Infinity,
       timeout: 10000,
       transports: ["websocket", "polling"],
     });
@@ -75,9 +77,10 @@ const CodeEditor = () => {
       setSocketInstance(socket);
       socket.on("connect_error", handleConnectionFail);
       socket.on("connect_failed", handleConnectionFail);
-      
-      socket.emit("join-room", roomId);
-      console.log("Joining room");
+      socket.on("connect", () => {
+        socket.emit("join-room", roomId);
+        console.log("Joining room");
+      });
 
       socket.on("userJoined", (socket) => {
         toast.info(`${socket.userName} joined the room`, {

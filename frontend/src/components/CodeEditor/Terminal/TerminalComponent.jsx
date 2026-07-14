@@ -26,10 +26,13 @@ const TerminalComponent = () => {
     setCompiling(true);
     document.body.style.cursor = "wait";
 
-    let normalized = codeInput.replace(/\s+/g, " "); // Replace all types of whitespace (spaces, tabs, etc.) with a single space
-    // normalized = normalized.replace(/ /g, "\n"); // Replace spaces with '\n'
-    normalized = normalized.replace(/\n+/g, "\n"); // Replace multiple '\n's with a single '\n'
-    normalized = normalized.trim(); // Trim leading and trailing whitespace/newlines
+    let normalized = codeInput || "";
+    normalized = normalized.replace(/\r\n/g, "\n").replace(/\t/g, " ");
+    normalized = normalized
+      .split("\n")
+      .map((line) => line.replace(/[ ]+/g, " ").trimEnd())
+      .join("\n")
+      .trim();
 
     let language = room?.language;
     language = language?.split(" ")[0].toLowerCase();

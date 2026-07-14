@@ -25,18 +25,40 @@ const cleanupTempDir = async (dir) => {
     }
 };
 
-const runLocalCode = async (language, code, input) => {
+const resolveLanguage = (language) => {
     const lang = language?.toLowerCase?.().split(" ")[0] || "";
-    let config;
+    const alias = {
+        "c++": "cpp",
+        cpp: "cpp",
+        ts: "typescript",
+        typescript: "typescript",
+        js: "javascript",
+        javascript: "javascript",
+        node: "javascript",
+        py: "python",
+        python: "python",
+        java: "java",
+        c: "c",
+        rust: "rust",
+        go: "go",
+    };
+    return alias[lang] || lang;
+};
 
-    if (lang === "c" || lang === "c++" || lang === "cpp") {
+const runLocalCode = async (language, code, input) => {
+    const lang = resolveLanguage(language);
+
+    if (lang === "c" || lang === "cpp") {
         const ext = lang === "c" ? "c" : "cpp";
         const compiler = lang === "c" ? "gcc" : "g++";
         const { tempDir, filePath } = await writeTempFile(code, ext);
         const exePath = path.join(tempDir, "program");
+        const compileArgs = lang === "c"
+            ? [filePath, "-o", exePath, "-O2", "-std=c11"]
+            : [filePath, "-o", exePath, "-O2", "-std=c++17"];
 
         try {
-            await execFileAsync(compiler, [filePath, "-o", exePath, "-O2", "-std=c++17"], {
+            await execFileAsync(compiler, compileArgs, {
                 timeout: 10000,
                 maxBuffer: 10 * 1024 * 1024,
             });
@@ -75,7 +97,7 @@ const runLocalCode = async (language, code, input) => {
         }
     }
 
-    if (lang === "javascript" || lang === "node") {
+    if (lang === "javascript") {
         const { tempDir, filePath } = await writeTempFile(code, "js");
         try {
             const { stdout, stderr } = await execFileAsync("node", [filePath], {
@@ -123,27 +145,47 @@ export const compileCode = async (req, res) => {
             return res.status(400).json({ success: false, message: "Code and language are required" });
         }
 
-        let remoteError;
-        if (process.env.PISTON_URL) {
+        const normalizedLanguage = resolveLanguage(language);
+        const localSupported = ["c", "cpp", "python", "javascript", "java"];
+        const pistonUrl = process.env.PISTON_URL || "https://emkc.org/api/v2/piston/execute";
+
+        if (!localSupported.includes(normalizedLanguage) && !pistonUrl) {
+            return res.status(400).json({ success: false, message: `Language '${normalizedLanguage}' is not supported locally and no PISTON_URL is configured.` });
+        }
+
+        if (!localSupported.includes(normalizedLanguage)) {
             try {
-                const response = await axios.post(process.env.PISTON_URL, {
-                    language,
+                const response = await axios.post(pistonUrl, {
+                    language: normalizedLanguage,
                     version: "*",
                     files: [{ content: code }],
                     stdin: input || "",
-                    timeout: 3,
+                    timeout: 10,
                 });
                 return res.status(200).json({ success: true, data: response.data });
             } catch (error) {
-                remoteError = error.response?.data || error.message || error;
-                console.warn("Remote Piston execution failed, falling back to local execution:", remoteError);
+                const remoteError = error.response?.data || error.message || error;
+                console.warn("Remote Piston execution failed for unsupported language:", remoteError);
+                return res.status(502).json({ success: false, message: "Remote code execution failed", error: remoteError });
             }
         }
 
-        const result = await runLocalCode(language, code, input);
+        let result = await runLocalCode(normalizedLanguage, code, input);
 
-        if (result.stderr && !result.stdout) {
-            return res.status(200).json({ success: true, data: { run: result } });
+        if (result.stderr && !result.stdout && pistonUrl) {
+            try {
+                const response = await axios.post(pistonUrl, {
+                    language: normalizedLanguage,
+                    version: "*",
+                    files: [{ content: code }],
+                    stdin: input || "",
+                    timeout: 10,
+                });
+                return res.status(200).json({ success: true, data: response.data });
+            } catch (error) {
+                const remoteError = error.response?.data || error.message || error;
+                console.warn("Local execution failed, remote fallback failed too:", remoteError);
+            }
         }
 
         return res.status(200).json({ success: true, data: { run: result } });

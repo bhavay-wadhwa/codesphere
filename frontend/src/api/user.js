@@ -1,7 +1,9 @@
 import axios from "axios";
 
 // Empty in the single-service deployment, where the API and Socket.IO share the app's origin.
-const BASE_URL = import.meta.env.VITE_API_URL ?? import.meta.env.VITE_B_URL ?? window.location.origin;
+const BASE_URL = import.meta.env.PROD
+    ? window.location.origin
+    : import.meta.env.VITE_API_URL ?? import.meta.env.VITE_B_URL ?? window.location.origin;
 
 export const oAuthLogin = async (code) => {
     const response = await axios.get(`${BASE_URL}/auth/google?code=${code}`, { withCredentials: true })
