@@ -292,36 +292,34 @@ export const compileCode = async (data) => {
     try {
         const { input, code, language } = data;
 
-        const response = await axios.post(`https://emkc.org/api/v2/piston/execute`, {
-            language: language,
-            version: "*",
-            files: [
-                {
-                    "content": code
-                }
-            ],
-            "stdin": input,
-            timeout: 3,
-        })
-        console.log(response)
+        const response = await axios.post(`${BASE_URL}/code/compile`, {
+            input,
+            code,
+            language,
+        }, {
+            withCredentials: true,
+        });
 
-        
-        if (response.data.run.stderr) {
-            return response.data.run.stderr;
+        if (response.data.success !== true) {
+            console.log("Compile API returned error", response.data);
+            return false;
         }
-        else if (response.data.run.signal === "SIGKILL") {
+
+        const run = response.data.data?.run;
+        if (!run) {
+            return false;
+        }
+
+        if (run.stderr) {
+            return run.stderr;
+        }
+        if (run.signal === "SIGKILL") {
             return "Time Limit Exceeded";
         }
-        else if (response.data.run.code === 0) {
-            return response.data.run.stdout;
-        }
-        else if (response.data.run.code !== 0) {
-            return response.data.run.stdout;
-        }
-
-        return false;
+        return run.stdout || "";
     } catch (error) {
-        console.log("Error in compileCode: ", error);
+        console.log("Error in compileCode: ", error.response?.data || error.message || error);
+        return false;
     }
 }
 

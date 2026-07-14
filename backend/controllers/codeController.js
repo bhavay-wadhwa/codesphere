@@ -1,6 +1,31 @@
+import axios from "axios";
 import { Room } from "../models/Room.model.js";
 import { User } from "../models/User.model.js";
 import { Code } from "../models/Code.model.js";
+
+export const compileCode = async (req, res) => {
+    try {
+        const { input, code, language } = req.body;
+
+        if (!code || !language) {
+            return res.status(400).json({ success: false, message: "Code and language are required" });
+        }
+
+        const response = await axios.post("https://emkc.org/api/v2/piston/execute", {
+            language,
+            version: "*",
+            files: [{ content: code }],
+            stdin: input || "",
+            timeout: 3,
+        });
+
+        return res.status(200).json({ success: true, data: response.data });
+    } catch (error) {
+        console.error("Error in compileCode:", error.response?.data || error.message || error);
+        const status = error.response?.status || 502;
+        return res.status(status).json({ success: false, message: "Code execution failed", error: error.response?.data || error.message });
+    }
+};
 
 export const codeSave = async (data) => {
     try {
