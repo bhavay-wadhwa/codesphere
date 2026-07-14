@@ -1,60 +1,77 @@
-# Judge0 Integration Setup Guide
+# Judge0 CE (Self-Hosted) Setup Guide
 
-Your CodeSphere backend now uses **Judge0** for reliable multi-language code compilation and execution. This eliminates the need to install compilers on your server.
+CodeSphere uses **Judge0 Community Edition** for secure, sandboxed code compilation and execution.
+This is a **free, open-source** solution that you self-host — no API keys, no rate limits, complete control.
 
-## What is Judge0?
+---
 
-Judge0 is a free, open-source code execution API that supports:
-- **C** (gcc)
-- **C++** (g++)
-- **Python** (Python 3)
-- **Java**
-- **JavaScript** (Node.js)
-- **Go**
-- **Rust**
-- And 60+ more languages
+## Table of Contents
+1. [Quick Start (Local Development)](#quick-start-local-development)
+2. [Production Deployment (Render)](#production-deployment-render)
+3. [Supported Languages](#supported-languages)
+4. [Configuration](#configuration)
+5. [Testing](#testing)
+6. [Troubleshooting](#troubleshooting)
 
-## Setup Steps
+---
 
-### 1. Get a Judge0 API Key (Free)
+## Quick Start (Local Development)
 
-1. Go to [RapidAPI - Judge0 CE](https://rapidapi.com/judge0-official/api/judge0-ce)
-2. Click **"Sign Up"** (or log in if you have an account)
-3. Click **"Subscribe"** on the free plan
-4. Go to **"Code Snippets"** or **"Endpoints"** tab
-5. Copy your **API Key** (in the header `X-RapidAPI-Key`)
+### Prerequisites
+- Docker installed on your machine ([Download](https://www.docker.com/products/docker-desktop))
+- Backend code pulled (`cd backend`)
 
-### 2. Add API Key to Your Backend
+### Step 1: Start Judge0 CE in Docker
 
-Edit `backend/.env`:
-
-```env
-# Judge0 API (for code compilation and execution)
-JUDGE0_API_KEY=YOUR_API_KEY_HERE
-JUDGE0_API_HOST=judge0-ce.p.rapidapi.com
+```bash
+docker run -p 2358:2358 judge0/judge0:latest
 ```
 
-**Replace `YOUR_API_KEY_HERE`** with your actual API key from step 1.
+This starts Judge0 with:
+- API on `http://localhost:2358`
+- PostgreSQL database built-in
+- No authentication needed
 
-### 3. Restart Your Backend
+> **Note:** First run may take 1-2 minutes to initialize the database.
+
+### Step 2: Verify Judge0 is Running
+
+```bash
+curl http://localhost:2358/languages
+```
+
+You should see a list of supported languages (60+ languages).
+
+### Step 3: Configure Backend
+
+Ensure `backend/.env` has:
+```
+JUDGE0_HOST=http://localhost:2358
+```
+
+### Step 4: Start Backend
 
 ```bash
 cd backend
+npm install  # if not done
 npm start
-# or for development:
-npm run dev
 ```
 
-## Testing
+### Step 5: Test Code Compilation
 
-### Test Locally
+**Frontend Test:**
+1. Navigate to http://localhost:5173 (or your frontend URL)
+2. Go to the Code Editor
+3. Write simple code (e.g., `print("Hello, World!")` in Python)
+4. Click "Run" or "Submit"
 
+**CLI Test:**
 ```bash
-curl -X POST http://localhost:4000/code/compile \
+curl -X POST http://localhost:3000/code/compile \
   -H "Content-Type: application/json" \
   -d '{
-    "language": "C++",
-    "code": "#include <iostream>\nint main() { std::cout << \"Hello\"; return 0; }",
+    "code": "print(\"Hello, World!\")",
+    "language": "python",
     "input": ""
   }'
 ```
@@ -65,7 +82,7 @@ Expected response:
   "success": true,
   "data": {
     "run": {
-      "stdout": "Hello",
+      "stdout": "Hello, World!\n",
       "stderr": "",
       "status": "Accepted"
     }
@@ -73,18 +90,130 @@ Expected response:
 }
 ```
 
-### Check Compiler Availability
+---
+
+## Production Deployment (Render)
+
+### Option 1: Judge0 on Separate Render Service (Recommended)
+
+#### Step 1: Create Judge0 Service on Render
+
+1. Go to [Render Dashboard](https://dashboard.render.com)
+2. Click "New +" → "Docker"
+3. Configure:
+   - **Name:** `judge0-service`
+   - **Docker Image URL:** `judge0/judge0:latest`
+   - **Port:** `2358`
+4. Add environment variable:
+   - **Key:** `JUDGE0_HEALTHCHECK_WORKERS_COUNT=1` (keeps free tier resource usage low)
+5. Create the service
+
+#### Step 2: Get Judge0 Service URL
+
+Once deployed, you'll get a URL like: `https://judge0-service.onrender.com`
+
+#### Step 3: Update Main Backend Service
+
+In your Render backend service environment variables, add:
+```
+JUDGE0_HOST=https://judge0-service.onrender.com
+```
+
+#### Step 4: Redeploy Backend
+
+Push a change or click "Deploy" in Render to pick up the new environment variable.
+
+---
+
+### Option 2: Judge0 in Same Docker Compose (Advanced)
+
+If you're using Docker Compose for the entire application:
+
+```yaml
+version: '3.8'
+
+services:
+  judge0:
+    image: judge0/judge0:latest
+    ports:
+      - "2358:2358"
+    environment:
+      JUDGE0_HEALTHCHECK_WORKERS_COUNT: 1
+
+  backend:
+    build: ./backend
+    ports:
+      - "3000:3000"
+    environment:
+      JUDGE0_HOST: http://judge0:2358
+    depends_on:
+      - judge0
+```
+
+---
+
+### Option 3: External Judge0 Instance
+
+If you have a Judge0 instance running elsewhere (e.g., dedicated server), point to it:
+
+```
+JUDGE0_HOST=https://your-judge0-server.com:2358
+```
+
+---
+
+## Supported Languages
+
+CodeSphere supports the following languages via Judge0:
+
+| Language      | Judge0 ID | Status     |
+|---|---|---|
+| C             | 50        | ✅ Supported |
+| C++           | 54        | ✅ Supported |
+| Python 3      | 71        | ✅ Supported |
+| Java          | 62        | ✅ Supported |
+| JavaScript    | 63        | ✅ Supported |
+| Go            | 60        | ✅ Supported |
+| Rust          | 73        | ✅ Supported |
+| TypeScript    | 74        | ✅ Supported |
+| Kotlin        | 48        | ✅ Supported |
+
+Judge0 CE supports 60+ additional languages. To add more:
+
+1. Query the Judge0 API: `GET /languages`
+2. Update `backend/controllers/codeController.js` with the language mapping
+3. Test and commit
+
+---
+
+## Configuration
+
+### Environment Variables
+
+| Variable       | Default              | Description                                    |
+|---|---|---|
+| `JUDGE0_HOST`  | `http://localhost:2358` | URL of Judge0 CE API (local or remote) |
+
+### Backend Configuration
+
+The backend automatically handles:
+- Language normalization (e.g., `"c++"` → `"cpp"`)
+- Language ID mapping to Judge0 IDs
+- Code submission with proper timeout (30 seconds)
+- Error handling and status reporting
+
+### Check Status Endpoint
 
 ```bash
-curl http://localhost:4000/code/status
+curl http://localhost:3000/code/status
 ```
 
 Response:
 ```json
 {
   "success": true,
-  "platform": "Judge0",
-  "configured": true,
+  "platform": "Judge0 CE (Self-Hosted)",
+  "judge0_host": "http://localhost:2358",
   "supported": {
     "c": true,
     "cpp": true,
@@ -93,86 +222,186 @@ Response:
     "javascript": true,
     "go": true,
     "rust": true
-  }
+  },
+  "available_languages": 60
 }
 ```
 
-## Deployment on Render
+---
 
-1. Set environment variables in Render Dashboard:
-   - Go to **Settings** → **Environment Variables**
-   - Add:
-     ```
-     JUDGE0_API_KEY=your_api_key
-     JUDGE0_API_HOST=judge0-ce.p.rapidapi.com
-     ```
+## Testing
 
-2. Redeploy your backend service
+### Unit Test: Language Support
 
-3. Test via browser: `https://your-render-domain.onrender.com/code/status`
+```bash
+# Verify all languages map correctly
+npm test -- codeController.test.js
+```
 
-## Supported Languages (Room Language Mapping)
+### Integration Test: Full Flow
 
-When creating a room, use these language values:
+```bash
+# 1. Ensure Judge0 is running
+docker ps | grep judge0
 
-| Room Language | Judge0 Language | Language ID |
-|---|---|---|
-| `c` | C | 50 |
-| `cpp` or `c++` | C++ | 54 |
-| `python` or `python3` | Python 3 | 71 |
-| `java` | Java | 62 |
-| `javascript` or `nodejs` | Node.js | 63 |
-| `go` | Go | 60 |
-| `rust` | Rust | 73 |
-| `typescript` | TypeScript | 74 |
+# 2. Ensure backend is running
+npm start &
 
-## Rate Limits
+# 3. Test Python
+curl -X POST http://localhost:3000/code/compile \
+  -H "Content-Type: application/json" \
+  -d '{"code":"print(1+1)","language":"python","input":""}'
 
-**Free Tier (RapidAPI):**
-- 100 requests per day
-- 10 requests per second
+# 4. Test C++
+curl -X POST http://localhost:3000/code/compile \
+  -H "Content-Type: application/json" \
+  -d '{"code":"#include <iostream>\nint main(){std::cout<<\"Hello\"<<std::endl;}","language":"cpp","input":""}'
 
-Upgrade to a paid plan for higher limits if needed.
+# 5. Test Java
+curl -X POST http://localhost:3000/code/compile \
+  -H "Content-Type: application/json" \
+  -d '{"code":"public class Main { public static void main(String[] args) { System.out.println(\"Hello\"); } }","language":"java","input":""}'
+```
+
+### Frontend Test
+
+1. Open Code Editor
+2. Create/update code
+3. Click "Run"
+4. Verify output in terminal
+
+---
 
 ## Troubleshooting
 
-### Error: "Judge0 API key not configured"
+### Judge0 Container Won't Start
 
-- Ensure `JUDGE0_API_KEY` is set in `.env` (local) or Render environment variables (production)
-- Restart your backend after adding the key
+**Problem:** `docker run` fails or container exits immediately
 
-### Error: "Failed to execute code on Judge0"
+**Solutions:**
+```bash
+# Check logs
+docker logs <container_id>
 
-- Check if your API key is correct
-- Verify your RapidAPI account is active
-- Check the free tier rate limits (100 requests/day)
+# Increase memory (if needed)
+docker run -p 2358:2358 -m 2g judge0/judge0:latest
 
-### Compilation/Runtime Error but Code Should Work
+# Use a specific stable version
+docker run -p 2358:2358 judge0/judge0:1.13.0
+```
 
-- Check stderr output for compiler/runtime errors
-- Verify language-specific syntax (e.g., Java class name must match file name)
-- Test with a simpler program first
+---
 
-## Next Steps
+### Backend Can't Connect to Judge0
 
-1. **Push to GitHub:**
-   ```bash
-   git add backend/controllers/codeController.js
-   git commit -m "Integrate Judge0 for multi-language compilation"
-   git push origin main
-   ```
+**Problem:** `Failed to execute code on Judge0. Make sure Judge0 is running.`
 
-2. **Deploy to Render:**
-   - Add `JUDGE0_API_KEY` to environment variables
-   - Redeploy the backend service
+**Checks:**
+```bash
+# 1. Verify Judge0 port is open
+curl http://localhost:2358/languages
 
-3. **Test in Your App:**
-   - Create a room with any supported language
-   - Write and run code from the editor
-   - Verify stdout/stderr output
+# 2. Check JUDGE0_HOST in backend .env
+cat backend/.env | grep JUDGE0_HOST
 
-## References
+# 3. Restart backend
+npm start
 
-- [Judge0 Documentation](https://ce.judge0.com/)
-- [RapidAPI Judge0](https://rapidapi.com/judge0-official/api/judge0-ce)
-- [Supported Languages List](https://ce.judge0.com/languages)
+# 4. Check backend logs for connection errors
+```
+
+---
+
+### Compilation Timeout
+
+**Problem:** Code compilation takes too long (>30 seconds)
+
+**Solutions:**
+- Judge0 timeout is 30 seconds by default
+- For infinite loops or long-running code, the process will be killed
+- This is intentional for security (prevent resource exhaustion)
+
+---
+
+### Language Not Supported
+
+**Problem:** `Language 'X' is not supported`
+
+**Solutions:**
+1. Check if Judge0 supports it: `curl http://localhost:2358/languages | grep -i "<language_name>"`
+2. Add to language mapping in `backend/controllers/codeController.js`
+3. Test and commit
+
+Example: To add **Perl** (language ID 54):
+```javascript
+// In getJudge0LanguageId()
+case "perl":
+  return 54;
+```
+
+---
+
+### Render Deployment Issues
+
+**Problem:** Backend on Render can't reach Judge0 CE
+
+**Solutions:**
+
+1. **Check URLs are correct:**
+   - Judge0 service URL: `https://judge0-service.onrender.com` (HTTPS)
+   - Backend has env var set: `JUDGE0_HOST=https://judge0-service.onrender.com`
+
+2. **Check both services are running:**
+   - Visit Judge0 URL in browser: `https://judge0-service.onrender.com/languages`
+   - Check backend status: `https://codesphere.onrender.com/code/status`
+
+3. **Restart services:**
+   - Render Dashboard → Judge0 Service → "Manual Deploy"
+   - Render Dashboard → Backend Service → "Manual Deploy"
+
+4. **Check logs:**
+   - Backend Logs: Look for "Judge0 submission error"
+   - Judge0 Logs: Check for connection/startup issues
+
+---
+
+## Security Notes
+
+### Judge0 CE Security
+
+Judge0 runs code in sandboxed Docker containers with:
+- Memory limits (configurable, default 64MB)
+- CPU limits
+- Network isolation (code can't access internet)
+- Filesystem isolation (code can't access host filesystem)
+
+### Production Best Practices
+
+1. **Keep Judge0 Internal:** Don't expose Judge0 API directly to users; route through backend
+2. **Rate Limiting:** Add rate limits in backend to prevent abuse
+3. **Monitoring:** Monitor Judge0 resource usage (CPU, memory) on production
+4. **Backups:** No persistent data in Judge0 by default; state is ephemeral
+
+---
+
+## Additional Resources
+
+- **Judge0 GitHub:** https://github.com/judge0/judge0
+- **Judge0 API Docs:** https://ce.judge0.com/
+- **Docker Hub:** https://hub.docker.com/r/judge0/judge0
+- **CodeSphere GitHub:** [Your repo URL]
+
+---
+
+## Support
+
+For issues or questions:
+1. Check the [Troubleshooting](#troubleshooting) section
+2. Review Judge0 logs: `docker logs <judge0_container_id>`
+3. Open an issue on GitHub with logs and steps to reproduce
+
+---
+
+**Last Updated:** 2025
+**Judge0 Version:** Latest stable
+**Status:** ✅ Production Ready

@@ -3,15 +3,12 @@ import { Room } from "../models/Room.model.js";
 import { User } from "../models/User.model.js";
 import { Code } from "../models/Code.model.js";
 
-const JUDGE0_API_KEY = process.env.JUDGE0_API_KEY;
-const JUDGE0_API_HOST = process.env.JUDGE0_API_HOST || "judge0-ce.p.rapidapi.com";
+// Judge0 CE self-hosted configuration
+const JUDGE0_HOST = process.env.JUDGE0_HOST || "http://localhost:2358";
 
 const judge0Instance = axios.create({
-    baseURL: `https://${JUDGE0_API_HOST}`,
-    headers: {
-        "X-RapidAPI-Key": JUDGE0_API_KEY,
-        "X-RapidAPI-Host": JUDGE0_API_HOST,
-    },
+    baseURL: JUDGE0_HOST,
+    timeout: 30000,
 });
 
 // Map room languages to Judge0 language IDs
@@ -57,16 +54,20 @@ const getJudge0LanguageId = (language) => {
 
 const submitToJudge0 = async (languageId, sourceCode, stdin = "") => {
     try {
+        // Submit code for execution
         const response = await judge0Instance.post("/submissions", {
             language_id: languageId,
             source_code: sourceCode,
             stdin: stdin,
-            wait: true, // Wait for completion instead of polling
+            wait: true, // Wait for completion
+        }, {
+            headers: {
+                "Content-Type": "application/json",
+            },
         });
 
         const { token, status, stdout, stderr, compile_output } = response.data;
 
-        // Parse Judge0 response
         return {
             token,
             status_id: status?.id,
@@ -79,7 +80,7 @@ const submitToJudge0 = async (languageId, sourceCode, stdin = "") => {
         console.error("Judge0 submission error:", error.message);
         return {
             error: error.message,
-            stderr: error.response?.data?.message || "Failed to execute code on Judge0",
+            stderr: error.response?.data?.message || `Failed to execute code on Judge0 at ${JUDGE0_HOST}. Make sure Judge0 is running.`,
         };
     }
 };
@@ -92,20 +93,13 @@ export const compileCode = async (req, res) => {
             return res.status(400).json({ success: false, message: "Code and language are required" });
         }
 
-        if (!JUDGE0_API_KEY) {
-            return res.status(500).json({
-                success: false,
-                message: "Judge0 API key not configured. Please set JUDGE0_API_KEY in environment variables.",
-            });
-        }
-
         const normalizedLanguage = resolveLanguage(language);
         const judge0LangId = getJudge0LanguageId(normalizedLanguage);
 
         if (!judge0LangId) {
             return res.status(400).json({
                 success: false,
-                message: `Language '${language}' is not supported. Supported languages: C, C++, Python, Java, JavaScript, Go, Rust.`,
+                message: `Language '${language}' is not supported. Supported: C, C++, Python, Java, JavaScript, Go, Rust.`,
             });
         }
 
@@ -119,7 +113,6 @@ export const compileCode = async (req, res) => {
             });
         }
 
-        // Determine success: compilation or runtime errors in stderr
         const hasError = result.stderr || result.compile_output;
 
         return res.status(200).json({
@@ -139,20 +132,33 @@ export const compileCode = async (req, res) => {
 };
 
 export const compileStatus = async (req, res) => {
-    return res.status(200).json({
-        success: true,
-        platform: "Judge0",
-        configured: !!JUDGE0_API_KEY,
-        supported: {
-            c: true,
-            cpp: true,
-            python: true,
-            java: true,
-            javascript: true,
-            go: true,
-            rust: true,
-        },
-    });
+    try {
+        const response = await judge0Instance.get("/languages");
+        const languages = response.data;
+        
+        return res.status(200).json({
+            success: true,
+            platform: "Judge0 CE (Self-Hosted)",
+            judge0_host: JUDGE0_HOST,
+            supported: {
+                c: true,
+                cpp: true,
+                python: true,
+                java: true,
+                javascript: true,
+                go: true,
+                rust: true,
+            },
+            available_languages: languages.length,
+        });
+    } catch (error) {
+        console.error("Judge0 status check failed:", error.message);
+        return res.status(503).json({
+            success: false,
+            message: `Judge0 is not running at ${JUDGE0_HOST}`,
+            error: error.message,
+        });
+    }
 };
 
 export const codeSave = async (data) => {
