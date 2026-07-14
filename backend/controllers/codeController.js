@@ -59,8 +59,8 @@ const submitToJudge0 = async (languageId, sourceCode, stdin = "") => {
             language_id: languageId,
             source_code: sourceCode,
             stdin: stdin,
-            wait: true, // Wait for completion
         }, {
+            params: { wait: true },
             headers: {
                 "Content-Type": "application/json",
             },
