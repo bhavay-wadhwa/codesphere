@@ -193,12 +193,11 @@ const runLocalCode = async (language, code, input) => {
                 runtime,
                 className,
                 code: runError.code,
+                command: runError.cmd,
             };
         }
     }
-
-    return { stderr: `Local execution for language '${language}' is not supported. Install a supported compiler or interpreter on the server.` };
-};
+}
 
 export const compileCode = async (req, res) => {
     try {
@@ -210,21 +209,35 @@ export const compileCode = async (req, res) => {
 
         const normalizedLanguage = resolveLanguage(language);
         const result = await runLocalCode(normalizedLanguage, code, input);
+        const failed = result.error || (result.stderr && !result.stdout);
 
-        if (!result.stderr || result.stdout) {
-            return res.status(200).json({ success: true, data: { run: result } });
+        if (failed) {
+            return res.status(500).json({
+                success: false,
+                message: `Local ${normalizedLanguage} execution failed.`,
+                error: result,
+            });
         }
 
-        return res.status(500).json({
-            success: false,
-            message: `Local compilation failed for language '${normalizedLanguage}'.`,
-            error: result.stderr || "Compilation failed",
-        });
+        return res.status(200).json({ success: true, data: { run: result } });
     } catch (error) {
-        console.error("Error in compileCode:", error.response?.data || error.message || error);
-        const status = error.response?.status || 502;
-        return res.status(status).json({ success: false, message: "Code execution failed", error: error.response?.data || error.message });
+        console.error("Error in compileCode:", error?.message || error);
+        return res.status(500).json({ success: false, message: "Code execution failed", error: error?.message || error });
     }
+};
+
+export const compileStatus = async (req, res) => {
+    const supported = {
+        c: findAvailableCommand(["gcc", "gcc-17", "gcc-13", "gcc-12", "gcc-11", "cc", "clang", "clang-17", "clang-13", "clang-12"]),
+        cpp: findAvailableCommand(["g++", "g++-17", "g++-13", "g++-12", "g++-11", "c++", "clang++", "clang++-17", "clang++-13", "clang++-12"]),
+        python: findAvailableCommand(["python3", "python"]),
+        javascript: findAvailableCommand(["node"]),
+        java: {
+            compiler: findAvailableCommand(["javac", "javac-21", "javac-20", "javac-19", "javac-18", "javac-17", "javac-11"]),
+            runtime: findAvailableCommand(["java", "java-21", "java-20", "java-19", "java-18", "java-17", "java-11"]),
+        },
+    };
+    return res.status(200).json({ success: true, supported });
 };
 
 export const codeSave = async (data) => {
