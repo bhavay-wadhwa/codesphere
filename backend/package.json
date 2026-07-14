@@ -28,6 +28,7 @@
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.15",
     "otp-generator": "^4.0.1",
-    "socket.io": "^4.8.0"
+    "socket.io": "^4.8.0",
+    "@sendgrid/mail": "^8.1.6"
   }
 }
