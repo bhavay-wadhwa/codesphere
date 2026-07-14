@@ -13,4 +13,4 @@ npm-debug.log*
 
 # Ignore build outputs
 dist/
-build/
+build/compile-worker/node_modules/
