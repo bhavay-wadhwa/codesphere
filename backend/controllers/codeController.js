@@ -182,10 +182,18 @@ const runLocalCode = async (language, code, input) => {
                 maxBuffer: 10 * 1024 * 1024,
             });
             await cleanupTempDir(tempDir);
-            return { stdout: stdout.toString(), stderr: stderr.toString() };
+            return { stdout: stdout.toString(), stderr: stderr.toString(), compiler, runtime, className };
         } catch (runError) {
             await cleanupTempDir(tempDir);
-            return { stderr: runError.stderr?.toString() || runError.message };
+            return {
+                stderr: runError.stderr?.toString() || "",
+                stdout: runError.stdout?.toString() || "",
+                error: runError.message,
+                compiler,
+                runtime,
+                className,
+                code: runError.code,
+            };
         }
     }
 
