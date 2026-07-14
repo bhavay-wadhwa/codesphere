@@ -1,78 +1,271 @@
-# CodeSphere
+# 🚀 CodeSphere
 
-CodeSphere is a collaborative coding space with rooms, live code updates, chat, code execution, profile management, email/password accounts, OTP verification, password reset, and Google sign-in.
+> **Your Classroom, Compiler, and Community in One Place**
 
-## Run locally
+CodeSphere is a full-stack collaborative coding platform that enables users to write, compile, and collaborate on code in real time. Designed for students, educators, and developers, it provides a seamless environment for live coding sessions with integrated chat, screen sharing, authentication, and multi-language code execution.
 
-1. Copy the example environment files:
+---
 
-   ```powershell
-   Copy-Item backend/.env.example backend/.env
-   Copy-Item frontend/.env.example frontend/.env
-   ```
+## ✨ Features
 
-2. Fill in `backend/.env`:
+### 👨‍💻 Real-Time Collaborative Coding
+- Write and edit code together in real time.
+- Supports multiple programming languages:
+  - C
+  - C++
+  - Java
+  - Python
+  - JavaScript
+  - and more.
 
-   - `MONGODB_URL` and a long random `JWT_SECRET` are required to start the API.
-   - `MAIL_*` values are required for signup OTPs and password-reset emails.
-   - `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` enable Google sign-in.
-   - `CLOUDINARY_*` values enable profile-photo uploads.
+### ⚡ Online Code Compilation
+- Compile and execute code directly within the platform.
+- Instant output and error feedback.
 
-   Put the same Google client ID in `frontend/.env` as `VITE_GOOGLE_CLIENT_ID`. The client secret must only be in `backend/.env`.
+### 💬 Live Chat
+- Built-in chat system for communication between participants.
+- Enables efficient collaboration during coding sessions.
 
-3. Install and run both applications in separate terminals:
+### 🏠 Room Management
+- Create collaborative coding rooms.
+- Join rooms using unique Room IDs.
+- Language-specific coding environments.
 
-   ```powershell
-   cd backend
-   npm install
-   npm run dev
-   ```
+### 🔐 Authentication
+- Email & Password Login
+- Google OAuth Sign-In
+- OTP Email Verification
+- Forgot Password & Password Reset
+- Secure JWT Authentication
 
-   ```powershell
-   cd frontend
-   npm install
-   npm run dev
-   ```
+### 👤 User Profile
+- Manage account information.
+- Personalized coding experience.
 
-   Open `http://localhost:5173`.
+### 💾 Local Code Saving
+- Save code locally on your device.
+- Continue working without losing progress.
 
-## Configure email delivery
+---
 
-The server now returns an error instead of falsely showing “OTP sent” when SMTP is missing or rejects a message. Configure a real SMTP provider before testing signup. For Gmail, enable 2-Step Verification, create an App Password, and use:
+# 🛠 Tech Stack
 
-```env
-MAIL_HOST=smtp.gmail.com
-MAIL_PORT=587
-MAIL_SECURE=false
-MAIL_USER=your-gmail-address@gmail.com
-MAIL_PASS=your-16-character-app-password
-MAIL_FROM=CodeSphere <your-gmail-address@gmail.com>
+## Frontend
+- React.js
+- Tailwind CSS
+- ShadCN UI
+- Monaco Editor
+- Axios
+- Socket.IO Client
+
+## Backend
+- Node.js
+- Express.js
+- MongoDB
+- Socket.IO
+- JWT Authentication
+
+## Authentication
+- Google OAuth
+- Email OTP Verification
+- JWT
+
+---
+
+# 📂 Project Structure
+
+```
+CodeSphere/
+│
+├── frontend/
+│   ├── src/
+│   ├── public/
+│   └── ...
+│
+├── backend/
+│   ├── controllers/
+│   ├── routes/
+│   ├── models/
+│   ├── middleware/
+│   └── ...
+│
+├── README.md
+└── render.yaml
 ```
 
-Use a provider such as Brevo, Postmark, Resend SMTP, or your own domain SMTP for production email rather than a personal mailbox.
+---
 
-## Configure Google sign-in
+# 🚀 Getting Started
 
-1. In Google Cloud Console, configure the OAuth consent screen and create an **OAuth client ID** of type **Web application**.
-2. Add these Authorized JavaScript origins:
-   - `http://localhost:5173`
-   - your deployed app origin, for example `https://codesphere.onrender.com`
-3. Copy its client ID to both `GOOGLE_CLIENT_ID` and `VITE_GOOGLE_CLIENT_ID`, and copy its client secret to `GOOGLE_CLIENT_SECRET` only.
+## Clone the Repository
 
-The app uses Google’s authorization-code popup flow: the browser receives a one-time code and the server exchanges it securely. No redirect URI is required for this popup configuration.
+```bash
+git clone https://github.com/bhavay-wadhwa/codesphere.git
+cd codesphere
+```
 
-## Deploy as one Render web service
+---
 
-This repository contains a root [`render.yaml`](render.yaml) blueprint. It builds React, serves the resulting files from Express, and uses the same HTTPS origin for API, authentication cookies, and Socket.IO. That makes OTP signup, Google sign-in, room collaboration, chat, and profile updates work without cross-site cookie workarounds.
+## Backend Setup
 
-1. Push this repository to GitHub.
-2. In Render, choose **New → Blueprint** and select the repository. Render finds `render.yaml` automatically.
-3. During setup, supply the prompted secret values:
-   - `MONGODB_URL` — a MongoDB Atlas connection string
-   - all `MAIL_*` values
-   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `VITE_GOOGLE_CLIENT_ID`
-   - all `CLOUDINARY_*` values
-4. Render generates `JWT_SECRET`, builds both projects, then provides the live `https://…onrender.com` URL. Add that URL to Google’s Authorized JavaScript origins and redeploy once.
-5. Visit `/health` on the live URL, then test: email signup and OTP receipt, Google signup, reset-password email, a profile image upload, and a room opened by two users.
+```bash
+cd backend
+npm install
+```
 
-Never commit `.env` files or OAuth/SMTP/Cloudinary credentials. The required values are deliberately prompted by the Blueprint rather than stored in source control.
+Create a `.env` file inside the `backend` folder.
+
+Example:
+
+```env
+PORT=4000
+
+MONGODB_URL=your_mongodb_connection_string
+
+JWT_SECRET=your_secret_key
+
+GOOGLE_CLIENT_ID=your_google_client_id
+
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+
+EMAIL=your_email
+
+EMAIL_PASSWORD=your_app_password
+
+FRONTEND_URL=http://localhost:5173
+```
+
+Start the backend server:
+
+```bash
+npm run dev
+```
+
+or
+
+```bash
+node --watch index.js
+```
+
+---
+
+## Frontend Setup
+
+```bash
+cd frontend
+npm install
+```
+
+Create a `.env` file inside the `frontend` folder.
+
+Example:
+
+```env
+VITE_API_URL=http://localhost:4000
+```
+
+Run the frontend:
+
+```bash
+npm run dev
+```
+
+Open your browser:
+
+```
+http://localhost:5173
+```
+
+---
+
+# 🎯 Usage
+
+## 1. Register/Login
+
+- Sign up using Email & Password
+- Verify your email using OTP
+- Or continue with Google Sign-In
+
+---
+
+## 2. Create a Coding Room
+
+- Select a programming language
+- Create a room
+- Receive a unique Room ID
+
+---
+
+## 3. Invite Participants
+
+Share the Room ID with teammates.
+
+They can instantly join the collaborative coding session.
+
+---
+
+## 4. Collaborate
+
+Inside a room you can:
+
+- Write code together
+- Compile code
+- Chat with teammates
+- Share your screen
+- Save code locally
+
+---
+
+
+# 🔮 Future Improvements
+
+- Video Calling
+- Voice Chat
+- File Explorer
+- Code Execution History
+- AI Code Assistant
+- Version Control
+- Collaborative Whiteboard
+- Dark/Light Theme
+- Docker Deployment
+
+---
+
+# 🤝 Contributing
+
+Contributions are welcome!
+
+1. Fork the repository
+2. Create a new branch
+
+```bash
+git checkout -b feature-name
+```
+
+3. Commit your changes
+
+```bash
+git commit -m "Add new feature"
+```
+
+4. Push your branch
+
+```bash
+git push origin feature-name
+```
+
+5. Open a Pull Request
+
+---
+
+# 📄 License
+
+This project is licensed under the MIT License.
+
+---
+
+# 👨‍💻 Author
+
+**Bhavay Wadhwa**
+
+GitHub: https://github.com/bhavay-wadhwa
