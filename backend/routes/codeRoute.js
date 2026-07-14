@@ -6,6 +6,6 @@ const router = Router();
 
 router.post("/getCode", appAuthMiddleware, getCode);
 router.post("/getRemoteCode", appAuthMiddleware, getRemoteCode);
-router.post("/compile", appAuthMiddleware, compileCode);
+router.post("/compile", compileCode);
 
 export default router;
