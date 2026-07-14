@@ -1,4 +1,4 @@
-import { execFile } from "child_process";
+import { execFile, execFileSync } from "child_process";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
@@ -43,6 +43,19 @@ const resolveLanguage = (language) => {
         go: "go",
     };
     return alias[lang] || lang;
+};
+
+const isCommandAvailable = (command) => {
+    if (!command) return false;
+
+    try {
+        const result = execFileSync(command, ["--version"], {
+            stdio: "ignore",
+        });
+        return result === null || result === undefined;
+    } catch (error) {
+        return false;
+    }
 };
 
 const runLocalCode = async (language, code, input) => {
@@ -146,49 +159,76 @@ export const compileCode = async (req, res) => {
         }
 
         const normalizedLanguage = resolveLanguage(language);
-        const localSupported = ["c", "cpp", "python", "javascript", "java"];
-        const pistonUrl = process.env.PISTON_URL || "https://emkc.org/api/v2/piston/execute";
+        const localSupported = {
+            c: "gcc",
+            cpp: "g++",
+            python: "python3",
+            javascript: "node",
+            java: "javac",
+        };
+        const pistonUrl = process.env.PISTON_URL || process.env.JUDGE0_URL || null;
+        const remoteService = process.env.JUDGE0_URL ? "judge0" : "piston";
 
-        if (!localSupported.includes(normalizedLanguage) && !pistonUrl) {
-            return res.status(400).json({ success: false, message: `Language '${normalizedLanguage}' is not supported locally and no PISTON_URL is configured.` });
-        }
+        const localCompiler = localSupported[normalizedLanguage];
+        const hasLocalCompiler = localCompiler && isCommandAvailable(localCompiler);
 
-        if (!localSupported.includes(normalizedLanguage)) {
-            try {
-                const response = await axios.post(pistonUrl, {
-                    language: normalizedLanguage,
-                    version: "*",
-                    files: [{ content: code }],
-                    stdin: input || "",
-                    timeout: 10,
-                });
-                return res.status(200).json({ success: true, data: response.data });
-            } catch (error) {
-                const remoteError = error.response?.data || error.message || error;
-                console.warn("Remote Piston execution failed for unsupported language:", remoteError);
-                return res.status(502).json({ success: false, message: "Remote code execution failed", error: remoteError });
+        if (hasLocalCompiler) {
+            const result = await runLocalCode(normalizedLanguage, code, input);
+            if (!result.stderr || result.stdout) {
+                return res.status(200).json({ success: true, data: { run: result } });
             }
+            console.warn("Local execution failed for", normalizedLanguage, result.stderr);
         }
 
-        let result = await runLocalCode(normalizedLanguage, code, input);
+        if (!pistonUrl) {
+            return res.status(500).json({
+                success: false,
+                message: `No available compiler for language '${normalizedLanguage}'. Install the required compiler or configure a remote compiler service.`,
+                error: hasLocalCompiler ? "Local compilation failed" : "Local compiler not installed",
+            });
+        }
 
-        if (result.stderr && !result.stdout && pistonUrl) {
-            try {
-                const response = await axios.post(pistonUrl, {
-                    language: normalizedLanguage,
-                    version: "*",
-                    files: [{ content: code }],
-                    stdin: input || "",
-                    timeout: 10,
-                });
-                return res.status(200).json({ success: true, data: response.data });
-            } catch (error) {
-                const remoteError = error.response?.data || error.message || error;
-                console.warn("Local execution failed, remote fallback failed too:", remoteError);
+        const remoteRequest = async () => {
+            if (process.env.JUDGE0_URL) {
+                const encodedSource = Buffer.from(code).toString("base64");
+                const encodedStdin = Buffer.from(input || "").toString("base64");
+                const response = await axios.post(
+                    `${process.env.JUDGE0_URL}/submissions?base64_encoded=true&wait=true`,
+                    {
+                        source_code: encodedSource,
+                        stdin: encodedStdin,
+                        language_id: parseInt(process.env.JUDGE0_LANG_ID || "52", 10),
+                    },
+                    { headers: { "Content-Type": "application/json", "Accept": "application/json" } }
+                );
+                return {
+                    stdout: Buffer.from(response.data.stdout || "", "base64").toString("utf8"),
+                    stderr: Buffer.from(response.data.stderr || "", "base64").toString("utf8"),
+                };
             }
-        }
 
-        return res.status(200).json({ success: true, data: { run: result } });
+            const response = await axios.post(pistonUrl, {
+                language: normalizedLanguage,
+                version: "*",
+                files: [{ content: code }],
+                stdin: input || "",
+                timeout: 10,
+            });
+            return response.data;
+        };
+
+        try {
+            const data = await remoteRequest();
+            return res.status(200).json({ success: true, data });
+        } catch (error) {
+            const remoteError = error.response?.data || error.message || error;
+            console.warn("Remote execution failed for", remoteService, normalizedLanguage, remoteError);
+            return res.status(502).json({
+                success: false,
+                message: "Remote code execution failed",
+                error: remoteError,
+            });
+        }
     } catch (error) {
         console.error("Error in compileCode:", error.response?.data || error.message || error);
         const status = error.response?.status || 502;

@@ -1,8 +1,8 @@
 services:
   - type: web
     name: codesphere
-    runtime: node
-    buildCommand: npm --prefix frontend ci && npm --prefix frontend run build && npm --prefix backend ci
+    runtime: docker
+    dockerfilePath: Dockerfile
     startCommand: npm --prefix backend start
     healthCheckPath: /health
     envVars:
