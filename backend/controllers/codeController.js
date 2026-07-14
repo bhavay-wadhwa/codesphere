@@ -70,12 +70,21 @@ const findAvailableCommand = (commands) => {
     return null;
 };
 
+const getJavaClassName = (source) => {
+    const publicMatch = source.match(/public\s+class\s+([A-Za-z_$][A-Za-z0-9_$]*)/);
+    if (publicMatch?.[1]) return publicMatch[1];
+    const classMatch = source.match(/class\s+([A-Za-z_$][A-Za-z0-9_$]*)/);
+    return classMatch?.[1] || "Main";
+};
+
 const runLocalCode = async (language, code, input) => {
     const lang = resolveLanguage(language);
 
     if (lang === "c" || lang === "cpp") {
         const ext = lang === "c" ? "c" : "cpp";
-        const compilers = lang === "c" ? ["gcc", "cc", "clang"] : ["g++", "c++", "clang++"];
+        const compilers = lang === "c"
+            ? ["gcc", "gcc-17", "gcc-13", "gcc-12", "gcc-11", "cc", "clang", "clang-17", "clang-13", "clang-12"]
+            : ["g++", "g++-17", "g++-13", "g++-12", "g++-11", "c++", "clang++", "clang++-17", "clang++-13", "clang++-12"];
         const compiler = findAvailableCommand(compilers);
         if (!compiler) {
             return { stderr: `No C/C++ compiler found on the server. Expected one of: ${compilers.join(", ")}.` };
@@ -154,19 +163,20 @@ const runLocalCode = async (language, code, input) => {
     }
 
     if (lang === "java") {
-        const compiler = findAvailableCommand(["javac"]);
-        if (!compiler) {
-            return { stderr: "No Java compiler found on the server. Expected javac." };
+        const compiler = findAvailableCommand(["javac", "javac-21", "javac-20", "javac-19", "javac-18", "javac-17", "javac-11"]);
+        const runtime = findAvailableCommand(["java", "java-21", "java-20", "java-19", "java-18", "java-17", "java-11"]);
+        if (!compiler || !runtime) {
+            return { stderr: "No Java compiler/runtime found on the server. Expected javac and java." };
         }
 
-        const { tempDir, filePath } = await writeTempFile(code, "java");
+        const className = getJavaClassName(code);
+        const { tempDir, filePath } = await writeTempFile(code, "java", `${className}.java`);
         try {
             await execFileAsync(compiler, [filePath], {
                 timeout: 10000,
                 maxBuffer: 10 * 1024 * 1024,
             });
-            const className = path.basename(filePath, ".java");
-            const { stdout, stderr } = await execFileAsync("java", ["-cp", tempDir, className], {
+            const { stdout, stderr } = await execFileAsync(runtime, ["-cp", tempDir, className], {
                 input: input || "",
                 timeout: 5000,
                 maxBuffer: 10 * 1024 * 1024,
