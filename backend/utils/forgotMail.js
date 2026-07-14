@@ -96,7 +96,7 @@ const forgotPasswordTemplate = (token, email) => {
           </p>
           <a
             class="button"
-            href="https://code-sphere-editor.vercel.app/reset-password?token=${token}"
+            href="${process.env.FRONTEND_URL || 'https://code-sphere-editor.vercel.app'}/reset-password?token=${token}"
             target="_blank"
           >
             Reset Password

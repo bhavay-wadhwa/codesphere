@@ -40,7 +40,8 @@ export const createRoom = async (req, res) => {
         })
 
     } catch (error) {
-        console.log("Error in createRoom");
+        console.error("Error in createRoom", error);
+        return res.status(500).json({ success: false, message: "Internal server error" });
     }
 
 }
@@ -99,8 +100,9 @@ export const joinRoom = async (req, res) => {
             room
         })
 
-    }catch(error){
-        console.log("Error in joinRoom", error);
+    } catch (error) {
+        console.error("Error in joinRoom", error);
+        return res.status(500).json({ success: false, message: "Internal server error" });
     }
 }
 
@@ -112,8 +114,8 @@ export const addMember = async (data) => {
         const user = await User.findOne({email});
         await Room.findByIdAndUpdate(roomId, {$push:{members:user._id}});
 
-    }catch(error){
-        console.log("Error in addMember");
+    } catch (error) {
+        console.error("Error in addMember", error);
     }
 }
 
@@ -125,8 +127,8 @@ export const removeMember = async (data) => {
         const user = await User.findOne({email});
         await Room.findByIdAndUpdate(roomId, {$pull:{members:user._id}});
         
-    }catch(error){
-        console.log("Error in addMember");
+    } catch (error) {
+        console.error("Error in removeMember", error);
     }
 }
 
@@ -166,7 +168,8 @@ export const getMembers = async (req, res) => {
             members,
         })
     } catch (error) {
-        console.log("Error in getMembers");
+        console.error("Error in getMembers", error);
+        return res.status(500).json({ success: false, message: "Internal server error" });
     }
 }
 
@@ -204,7 +207,8 @@ export const getRoomDetails = async (req, res) => {
             room
         })
     } catch (error) {
-        console.log("Error in getRoomDetails");
+        console.error("Error in getRoomDetails", error);
+        return res.status(500).json({ success: false, message: "Internal server error" });
     }
 }
 
@@ -253,6 +257,7 @@ export const deleteRoom = async (req, res) => {
             rooms: userRooms
         })
     } catch (error) {
-        console.log("Error in deleteRoom");
+        console.error("Error in deleteRoom", error);
+        return res.status(500).json({ success: false, message: "Internal server error" });
     }
 }    
