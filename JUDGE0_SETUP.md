@@ -1,17 +1,277 @@
-# Judge0 CE (Self-Hosted) Setup Guide
+# Judge0 CE API Setup Guide
 
 CodeSphere uses **Judge0 Community Edition** for secure, sandboxed code compilation and execution.
-This is a **free, open-source** solution that you self-host — no API keys, no rate limits, complete control.
+
+There are two options:
+1. **Public Free API** (recommended for production) — no setup needed
+2. **Self-hosted** (optional for local development) — full control, unlimited
 
 ---
 
-## Table of Contents
-1. [Quick Start (Local Development)](#quick-start-local-development)
-2. [Production Deployment (Render)](#production-deployment-render)
-3. [Supported Languages](#supported-languages)
-4. [Configuration](#configuration)
-5. [Testing](#testing)
-6. [Troubleshooting](#troubleshooting)
+## Quick Start (Recommended: Public API)
+
+### Option 1: Use Public Judge0 CE API (No Setup)
+
+**This is the recommended approach — completely free, no configuration needed.**
+
+#### Step 1: Update Backend Environment Variables
+
+In `backend/.env`, set:
+```bash
+JUDGE0_HOST=https://ce.judge0.com
+```
+
+That's it! No other setup required.
+
+#### Step 2: Restart Backend
+
+```bash
+cd backend
+npm start
+```
+
+#### Step 3: Test
+
+```bash
+# Test status endpoint
+curl http://localhost:3000/code/status
+
+# Should see: "platform": "Judge0 CE (Self-Hosted)"
+```
+
+---
+
+## Option 2: Local Self-Hosted Judge0 (Development)
+
+If you want unlimited local development without rate limits:
+
+### Prerequisites
+- Docker Desktop installed
+
+### Step 1: Start Judge0 Locally
+
+```bash
+docker run -p 2358:2358 judge0/judge0:latest
+```
+
+First run takes 1-2 minutes (database initialization).
+
+### Step 2: Configure Backend
+
+In `backend/.env`, set:
+```bash
+JUDGE0_HOST=http://localhost:2358
+```
+
+### Step 3: Restart Backend
+
+```bash
+cd backend
+npm start
+```
+
+### Step 4: Test
+
+```bash
+curl http://localhost:2358/languages
+# Should return list of 60+ languages
+```
+
+---
+
+## Deployment on Render
+
+**No additional setup needed!** Your Render backend will automatically use the public API.
+
+### Step 1: Deploy CodeSphere Backend
+
+In Render dashboard, set environment variable:
+```bash
+JUDGE0_HOST=https://ce.judge0.com
+```
+
+### Step 2: Redeploy
+
+Push changes or click "Redeploy" in Render dashboard.
+
+### Step 3: Verify
+
+```bash
+curl https://your-codesphere-backend.onrender.com/code/status
+```
+
+Should return:
+```json
+{
+  "success": true,
+  "platform": "Judge0 CE (Self-Hosted)",
+  "supported": {
+    "c": true,
+    "cpp": true,
+    "python": true,
+    ...
+  }
+}
+```
+
+---
+
+## Supported Languages
+
+| Language | Judge0 ID | Status |
+|---|---|---|
+| C | 50 | ✅ |
+| C++ | 54 | ✅ |
+| Python 3 | 71 | ✅ |
+| Java | 62 | ✅ |
+| JavaScript | 63 | ✅ |
+| Go | 60 | ✅ |
+| Rust | 73 | ✅ |
+| TypeScript | 74 | ✅ |
+| Kotlin | 48 | ✅ |
+
+Judge0 supports 60+ additional languages. Query available:
+```bash
+curl https://ce.judge0.com/languages
+```
+
+---
+
+## Public API Rate Limits
+
+**Judge0 Public Free API:**
+- ~100 submissions per day (generous for dev/testing)
+- 1-2 second execution time
+- No API key needed
+
+For higher limits or production use:
+- Run self-hosted Judge0 locally or on your server
+- Or upgrade to Judge0 Premium (optional)
+
+---
+
+## Testing
+
+### Test Compilation (Public API)
+
+```bash
+# Python
+curl -X POST http://localhost:3000/code/compile \
+  -H "Content-Type: application/json" \
+  -d '{"code":"print(123)","language":"python","input":""}'
+
+# C++
+curl -X POST http://localhost:3000/code/compile \
+  -H "Content-Type: application/json" \
+  -d '{"code":"#include<iostream>\nint main(){std::cout<<\"hi\";}","language":"cpp","input":""}'
+
+# Java
+curl -X POST http://localhost:3000/code/compile \
+  -H "Content-Type: application/json" \
+  -d '{"code":"public class Main{public static void main(String[] a){System.out.println(\"hi\");}}","language":"java","input":""}'
+```
+
+### Frontend Test
+
+1. Open CodeSphere Code Editor
+2. Write code (any language)
+3. Click "Run"
+4. Verify output in terminal
+
+---
+
+## Troubleshooting
+
+### Error: "Failed to execute code on Judge0"
+
+**Problem:** Backend can't reach Judge0 API
+
+**Checks:**
+```bash
+# 1. Verify JUDGE0_HOST is correct
+cat backend/.env | grep JUDGE0_HOST
+
+# 2. Verify public API is reachable
+curl https://ce.judge0.com/languages
+
+# 3. Restart backend
+cd backend && npm start
+
+# 4. Check backend logs for specific errors
+```
+
+### Rate Limited
+
+**Problem:** Too many submissions, getting rate-limited
+
+**Solution:**
+- Use locally self-hosted Judge0 (no rate limits)
+- Or wait and try again (limit resets daily)
+
+---
+
+## Advanced: Self-Hosted Production
+
+For production with unlimited submissions:
+
+### Deploy Judge0 Separately
+
+Use `docker/judge0-ce/` folder to deploy self-hosted Judge0 on Render:
+
+1. Create separate GitHub repo from `docker/judge0-ce/`
+2. Deploy to Render as separate Docker service
+3. Set backend's `JUDGE0_HOST=https://judge0-service.onrender.com`
+
+See [docker/DEPLOYMENT.md](../docker/DEPLOYMENT.md) for full instructions.
+
+---
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Value | Description |
+|---|---|---|
+| `JUDGE0_HOST` | `https://ce.judge0.com` | Public API (recommended) |
+| `JUDGE0_HOST` | `http://localhost:2358` | Local development |
+| `JUDGE0_HOST` | `https://judge0-service.onrender.com` | Self-hosted on Render |
+
+---
+
+## Architecture
+
+```
+Frontend (React)
+    ↓
+Backend (Node.js)
+    ↓
+Judge0 API (https://ce.judge0.com)
+    ↓
+Sandbox (C, C++, Python, Java, etc.)
+    ↓
+Output (stdout, stderr, compilation errors)
+```
+
+---
+
+## Resources
+
+- **Judge0 Public API:** https://ce.judge0.com/
+- **Judge0 GitHub:** https://github.com/judge0/judge0
+- **Supported Languages:** https://ce.judge0.com/languages
+- **CodeSphere GitHub:** [Your repo URL]
+
+---
+
+## Summary
+
+✅ **Public API** = Easiest, recommended for production  
+✅ **Local self-hosted** = Full control, no rate limits, for development  
+✅ **No API key needed** = Both options are free  
+✅ **No Docker required for production** = Just set environment variable  
+
+**Status:** ✅ Ready for Production  
+**Last Updated:** 2025
 
 ---
 
