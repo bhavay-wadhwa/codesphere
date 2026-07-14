@@ -66,7 +66,25 @@ const submitToJudge0 = async (languageId, sourceCode, stdin = "") => {
             },
         });
 
-        const { token, status, stdout, stderr, compile_output } = response.data;
+        let { token, status, stdout, stderr, compile_output } = response.data;
+
+        // Some Judge0 deployments require using the submissions/{token} endpoint
+        // to fetch results. If stdout is missing but a token is provided, fetch it.
+        if ((stdout === null || stdout === undefined) && token) {
+            try {
+                const poll = await judge0Instance.get(`/submissions/${token}`, {
+                    params: { base64_encoded: false },
+                });
+                const polldata = poll.data || {};
+                status = polldata.status || status;
+                stdout = polldata.stdout ?? stdout;
+                stderr = polldata.stderr ?? stderr;
+                compile_output = polldata.compile_output ?? compile_output;
+            } catch (err) {
+                // ignore polling error; we'll return what we have
+                console.error('Judge0 polling error:', err.message);
+            }
+        }
 
         return {
             token,
