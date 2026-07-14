@@ -390,7 +390,7 @@ export const verifyToken = async (token) => {
 
         return false
     } catch (error) {
-        const message = error.response.data.error.name;
+        const message = error.response?.data?.error?.name || error.response?.data?.name || error.response?.data?.message;
         if (message === "TokenExpiredError") {
             return {
                 success: false,

@@ -28,8 +28,11 @@ const createAuthToken = (user) => {
         throw new Error("JWT_SECRET is not configured");
     }
 
+    const firstName = user.firstName?.trim() || "CodeSphere";
+    const lastName = user.lastName?.trim() || "User";
+
     return jwt.sign({
-        name: `${user.firstName} ${user.lastName}`,
+        name: `${firstName} ${lastName}`,
         email: user.email,
         id: user._id,
     }, process.env.JWT_SECRET, { expiresIn: "365d" });
@@ -196,10 +199,27 @@ export const googleSignup = async (req, res) => {
             return sendAuthResponse(res, 200, existingUser, "User logged in successfully");
         }
 
+        const fullName = (data.name || "").trim();
+        let firstName = data.given_name?.trim();
+        let lastName = data.family_name?.trim();
+
+        if (!firstName && !lastName && fullName) {
+            const [first, ...rest] = fullName.split(" ");
+            firstName = first;
+            lastName = rest.join(" ") || "User";
+        }
+
+        if (!firstName) {
+            firstName = email.split("@")[0].replace(/[^a-zA-Z0-9]/g, "") || "CodeSphere";
+        }
+        if (!lastName) {
+            lastName = "User";
+        }
+
         const user = await User.create({
             email,
-            firstName: data.given_name || "CodeSphere",
-            lastName: data.family_name || "User",
+            firstName,
+            lastName,
             imageUrl: data.picture,
             googleId: data.id,
         });
@@ -256,7 +276,15 @@ export const verifyToken = async (req, res) => {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         return res.status(200).json({ success: true, message: "Token verified successfully", decoded });
     } catch (error) {
-        return res.status(401).json({ success: false, message: "Invalid or expired token" });
+        console.error("Error in verifyToken:", error);
+        return res.status(401).json({
+            success: false,
+            message: error.message || "Invalid or expired token",
+            error: {
+                name: error.name || "JsonWebTokenError",
+                message: error.message || "Invalid or expired token",
+            },
+        });
     }
 };
 

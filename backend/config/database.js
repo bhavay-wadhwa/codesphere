@@ -7,7 +7,7 @@ export const connectDB = async () => {
 
     try {
         const conn = await mongoose.connect(process.env.MONGODB_URL, {
-            // dbName: "CodeSphere",
+            dbName: process.env.MONGODB_DB_NAME || "CodeSphere",
         });
         console.log(`MongoDB Connected: ${conn.connection.host}`);
 

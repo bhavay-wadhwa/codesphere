@@ -1,4 +1,6 @@
 const forgotPasswordTemplate = (token, email) => {
+    const frontendUrl = process.env.FRONTEND_URL || process.env.RENDER_EXTERNAL_URL || 'http://localhost:5173';
+
     return `
     <!DOCTYPE html>
     <html lang="en">
@@ -96,7 +98,7 @@ const forgotPasswordTemplate = (token, email) => {
           </p>
           <a
             class="button"
-            href="${process.env.FRONTEND_URL || 'https://code-sphere-editor.vercel.app'}/reset-password?token=${token}"
+            href="${frontendUrl}/reset-password?token=${token}"
             target="_blank"
           >
             Reset Password
@@ -118,7 +120,7 @@ const forgotPasswordTemplate = (token, email) => {
             <a href="mailto:${email}">${email}</a>
           </p>
           <p class="email-info">
-            <a href="https://code-sphere-editor.vercel.app/">CodeSphere</a> | Siliguri, West Bengal - 734001, INDIA
+            <a href="${frontendUrl}/">CodeSphere</a> | Siliguri, West Bengal - 734001, INDIA
           </p>
           <p class="email-info">&copy; 2024 CodeSphere. All rights reserved.</p>
         </div>
