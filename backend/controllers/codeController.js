@@ -2,7 +2,6 @@ import { execFile, execFileSync } from "child_process";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import axios from "axios";
 import { promisify } from "util";
 import { Room } from "../models/Room.model.js";
 import { User } from "../models/User.model.js";
@@ -10,9 +9,9 @@ import { Code } from "../models/Code.model.js";
 
 const execFileAsync = promisify(execFile);
 
-const writeTempFile = async (content, ext) => {
+const writeTempFile = async (content, ext, filename) => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codesphere-"));
-    const filePath = path.join(tempDir, `source.${ext}`);
+    const filePath = path.join(tempDir, filename || `source.${ext}`);
     await fs.writeFile(filePath, content, "utf8");
     return { tempDir, filePath };
 };
@@ -45,17 +44,30 @@ const resolveLanguage = (language) => {
     return alias[lang] || lang;
 };
 
-const isCommandAvailable = (command) => {
+const isCommandAvailable = (command, args = ["--version"]) => {
     if (!command) return false;
 
     try {
-        const result = execFileSync(command, ["--version"], {
+        execFileSync(command, args, {
             stdio: "ignore",
         });
-        return result === null || result === undefined;
+        return true;
     } catch (error) {
         return false;
     }
+};
+
+const findAvailableCommand = (commands) => {
+    for (const command of commands) {
+        const args = ["--version"];
+        if (command === "java" || command === "javac") {
+            args[0] = "-version";
+        }
+        if (isCommandAvailable(command, args)) {
+            return command;
+        }
+    }
+    return null;
 };
 
 const runLocalCode = async (language, code, input) => {
@@ -63,7 +75,12 @@ const runLocalCode = async (language, code, input) => {
 
     if (lang === "c" || lang === "cpp") {
         const ext = lang === "c" ? "c" : "cpp";
-        const compiler = lang === "c" ? "gcc" : "g++";
+        const compilers = lang === "c" ? ["gcc", "cc", "clang"] : ["g++", "c++", "clang++"];
+        const compiler = findAvailableCommand(compilers);
+        if (!compiler) {
+            return { stderr: `No C/C++ compiler found on the server. Expected one of: ${compilers.join(", ")}.` };
+        }
+
         const { tempDir, filePath } = await writeTempFile(code, ext);
         const exePath = path.join(tempDir, "program");
         const compileArgs = lang === "c"
@@ -95,9 +112,14 @@ const runLocalCode = async (language, code, input) => {
     }
 
     if (lang === "python") {
+        const runner = findAvailableCommand(["python3", "python"]);
+        if (!runner) {
+            return { stderr: "No Python interpreter found on the server. Expected python3 or python." };
+        }
+
         const { tempDir, filePath } = await writeTempFile(code, "py");
         try {
-            const { stdout, stderr } = await execFileAsync("python3", [filePath], {
+            const { stdout, stderr } = await execFileAsync(runner, [filePath], {
                 input: input || "",
                 timeout: 5000,
                 maxBuffer: 10 * 1024 * 1024,
@@ -111,9 +133,14 @@ const runLocalCode = async (language, code, input) => {
     }
 
     if (lang === "javascript") {
+        const runner = findAvailableCommand(["node"]);
+        if (!runner) {
+            return { stderr: "No Node.js runtime found on the server. Expected node." };
+        }
+
         const { tempDir, filePath } = await writeTempFile(code, "js");
         try {
-            const { stdout, stderr } = await execFileAsync("node", [filePath], {
+            const { stdout, stderr } = await execFileAsync(runner, [filePath], {
                 input: input || "",
                 timeout: 5000,
                 maxBuffer: 10 * 1024 * 1024,
@@ -127,9 +154,14 @@ const runLocalCode = async (language, code, input) => {
     }
 
     if (lang === "java") {
+        const compiler = findAvailableCommand(["javac"]);
+        if (!compiler) {
+            return { stderr: "No Java compiler found on the server. Expected javac." };
+        }
+
         const { tempDir, filePath } = await writeTempFile(code, "java");
         try {
-            await execFileAsync("javac", [filePath], {
+            await execFileAsync(compiler, [filePath], {
                 timeout: 10000,
                 maxBuffer: 10 * 1024 * 1024,
             });
@@ -147,7 +179,7 @@ const runLocalCode = async (language, code, input) => {
         }
     }
 
-    return { stderr: `Local execution for language '${language}' is not supported. Set PISTON_URL to a valid Piston instance or install a supported compiler on the server.` };
+    return { stderr: `Local execution for language '${language}' is not supported. Install a supported compiler or interpreter on the server.` };
 };
 
 export const compileCode = async (req, res) => {
@@ -159,76 +191,17 @@ export const compileCode = async (req, res) => {
         }
 
         const normalizedLanguage = resolveLanguage(language);
-        const localSupported = {
-            c: "gcc",
-            cpp: "g++",
-            python: "python3",
-            javascript: "node",
-            java: "javac",
-        };
-        const pistonUrl = process.env.PISTON_URL || process.env.JUDGE0_URL || null;
-        const remoteService = process.env.JUDGE0_URL ? "judge0" : "piston";
+        const result = await runLocalCode(normalizedLanguage, code, input);
 
-        const localCompiler = localSupported[normalizedLanguage];
-        const hasLocalCompiler = localCompiler && isCommandAvailable(localCompiler);
-
-        if (hasLocalCompiler) {
-            const result = await runLocalCode(normalizedLanguage, code, input);
-            if (!result.stderr || result.stdout) {
-                return res.status(200).json({ success: true, data: { run: result } });
-            }
-            console.warn("Local execution failed for", normalizedLanguage, result.stderr);
+        if (!result.stderr || result.stdout) {
+            return res.status(200).json({ success: true, data: { run: result } });
         }
 
-        if (!pistonUrl) {
-            return res.status(500).json({
-                success: false,
-                message: `No available compiler for language '${normalizedLanguage}'. Install the required compiler or configure a remote compiler service.`,
-                error: hasLocalCompiler ? "Local compilation failed" : "Local compiler not installed",
-            });
-        }
-
-        const remoteRequest = async () => {
-            if (process.env.JUDGE0_URL) {
-                const encodedSource = Buffer.from(code).toString("base64");
-                const encodedStdin = Buffer.from(input || "").toString("base64");
-                const response = await axios.post(
-                    `${process.env.JUDGE0_URL}/submissions?base64_encoded=true&wait=true`,
-                    {
-                        source_code: encodedSource,
-                        stdin: encodedStdin,
-                        language_id: parseInt(process.env.JUDGE0_LANG_ID || "52", 10),
-                    },
-                    { headers: { "Content-Type": "application/json", "Accept": "application/json" } }
-                );
-                return {
-                    stdout: Buffer.from(response.data.stdout || "", "base64").toString("utf8"),
-                    stderr: Buffer.from(response.data.stderr || "", "base64").toString("utf8"),
-                };
-            }
-
-            const response = await axios.post(pistonUrl, {
-                language: normalizedLanguage,
-                version: "*",
-                files: [{ content: code }],
-                stdin: input || "",
-                timeout: 10,
-            });
-            return response.data;
-        };
-
-        try {
-            const data = await remoteRequest();
-            return res.status(200).json({ success: true, data });
-        } catch (error) {
-            const remoteError = error.response?.data || error.message || error;
-            console.warn("Remote execution failed for", remoteService, normalizedLanguage, remoteError);
-            return res.status(502).json({
-                success: false,
-                message: "Remote code execution failed",
-                error: remoteError,
-            });
-        }
+        return res.status(500).json({
+            success: false,
+            message: `Local compilation failed for language '${normalizedLanguage}'.`,
+            error: result.stderr || "Compilation failed",
+        });
     } catch (error) {
         console.error("Error in compileCode:", error.response?.data || error.message || error);
         const status = error.response?.status || 502;
