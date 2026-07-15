@@ -18,7 +18,7 @@ const EditorComponent = ({ socket }) => {
   const userCode = useSelector((state) => state.code.userCode);
   const userId = useSelector((state) => state.profile.user._id);
   const [language, setLanguage] = useState(null);
-  const [canEdit, setCanEdit] = useState(true);
+  const [canEdit, setCanEdit] = useState(false);
   const [isViewer, setIsViewer] = useState(false);
   const userCodeRef = useRef(userCode);
   const languageRef = useRef(room?.language);
@@ -40,9 +40,8 @@ const EditorComponent = ({ socket }) => {
       const editorIds = (room?.editors || []).map(String);
       const isAdmin = room?.admin?.toString?.() === userId;
       const hasEditor = isAdmin || editorIds.includes(userId);
-      const locked = !!room?.isLocked;
-      setCanEdit(!locked || hasEditor);
-      setIsViewer(locked && !hasEditor);
+      setCanEdit(hasEditor);
+      setIsViewer(!hasEditor);
     };
 
     updateEditMode();
@@ -117,23 +116,23 @@ const EditorComponent = ({ socket }) => {
     socket.on('receiveCode', handleReceiveCode);
     socket.on('cursor-updated', handleCursorUpdated);
     socket.on('userLeft', handleUserLeft);
-    socket.on('accessChanged', (payload) => {
+    const handleAccessChanged = (payload) => {
       if (payload?.userId === userId) {
         const editorIds = (room?.editors || []).map(String);
         const isAdmin = room?.admin?.toString?.() === userId;
         const hasEditor = isAdmin || editorIds.includes(userId);
-        const locked = !!room?.isLocked;
-        setCanEdit(!locked || hasEditor);
-        setIsViewer(locked && !hasEditor);
+        setCanEdit(hasEditor);
+        setIsViewer(!hasEditor);
       }
-    });
+    };
+    socket.on('accessChanged', handleAccessChanged);
 
     return () => {
       socket.off('initialState', handleInitial);
       socket.off('receiveCode', handleReceiveCode);
       socket.off('cursor-updated', handleCursorUpdated);
       socket.off('userLeft', handleUserLeft);
-      socket.off('accessChanged');
+      socket.off('accessChanged', handleAccessChanged);
     };
   }, [socket, userId, dispatch, room]);
 
@@ -234,7 +233,7 @@ const EditorComponent = ({ socket }) => {
       )}
       {isViewer && (
         <div className="absolute top-16 right-4 px-3 py-2 rounded-md bg-yellow-500/10 text-yellow-200 border border-yellow-500/30 text-sm">
-          You are in view-only mode while the room is locked.
+          You are in view-only mode. Only owners and granted editors can edit and run code.
         </div>
       )}
     </div>

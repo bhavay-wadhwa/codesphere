@@ -102,23 +102,6 @@ const CodeEditor = () => {
         }
       });
 
-      socket.on("roomLocked", ({ by }) => {
-        toast.info(`Room locked by ${by}`);
-        dispatch(updateRoomDetails({ isLocked: true }));
-      });
-
-      socket.on("roomUnlocked", ({ by }) => {
-        toast.info(`Room unlocked by ${by}`);
-        dispatch(updateRoomDetails({ isLocked: false }));
-      });
-
-      socket.on("roomLocked", ({ by }) => {
-        toast.info(`Room locked by ${by}`);
-      });
-
-      socket.on("roomUnlocked", ({ by }) => {
-        toast.info(`Room unlocked by ${by}`);
-      });
     }
 
     getRoomData();
@@ -133,8 +116,6 @@ const CodeEditor = () => {
         socket.off("removedFromRoom");
         socket.off("initialState");
         socket.off("members-updated");
-        socket.off("roomLocked");
-        socket.off("roomUnlocked");
         socket.disconnect();
         dispatch(closeTerminal());
         dispatch(setRoomDetails({}));

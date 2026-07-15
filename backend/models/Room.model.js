@@ -27,11 +27,6 @@ const roomSchema = new mongoose.Schema({
             ref: "User",
         }
     ],
-    // If locked, only `admin` and users in `editors` can edit/run code
-    isLocked: {
-        type: Boolean,
-        default: false,
-    },
     // Mark when session has ended
     ended: {
         type: Boolean,

@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button';
-import React, { useEffect } from 'react'
+import React from 'react'
 import { RiMenu2Fill } from "react-icons/ri";
 import { TbCopy } from "react-icons/tb";
 import { BsTerminal } from "react-icons/bs";
@@ -21,16 +21,6 @@ const TopBar = ({ socket }) => {
     const userCode = useSelector((state) => state.code.userCode);
     const user = useSelector((state) => state.profile.user);
     const isOwner = roomData?.admin?.toString?.() === user?._id;
-    const isLocked = !!roomData?.isLocked;
-
-    const handleToggleLock = (e) => {
-        e.preventDefault();
-        if (!socket) {
-            toast.error('Socket not connected', { autoClose: 3000 });
-            return;
-        }
-        socket.emit('lock-editor', { roomId, lock: !isLocked });
-    }
 
     const handleCopyRoomId = (e) => {
         e.preventDefault();
@@ -102,11 +92,6 @@ const TopBar = ({ socket }) => {
                 <span onClick={() => navigate("/")} className="material-symbols-outlined bg-red-600 p-2 rounded-full cursor-pointer">call_end</span>
             </div>
             <div className=' flex items-center gap-2 sm:gap-5'>
-                {isOwner && (
-                  <Button onClick={handleToggleLock} variant={isLocked ? 'destructive' : 'secondary'}>
-                    {isLocked ? 'Unlock Editor' : 'Lock Editor'}
-                  </Button>
-                )}
                 <Button onClick={handleSaveCode} variant="outline"><MdSaveAlt /><span className=' hidden sm:block'>Save</span></Button>
                 <Button onClick={() => { dispatch(openTerminal()); dispatch(setTerminalUser("user")) }}><BsTerminal /><span className=' hidden sm:block'>Terminal</span></Button>
             </div>

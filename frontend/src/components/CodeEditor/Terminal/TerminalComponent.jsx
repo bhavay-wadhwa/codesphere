@@ -20,8 +20,17 @@ const TerminalComponent = ({ socket }) => {
     <TerminalOutput key={1}>{""}</TerminalOutput>,
   ]);
 
+  const currentUserId = useSelector((state) => state.profile.user._id);
+  const isAdmin = room?.admin?._id === currentUserId;
+  const editorIds = (room?.editors || []).map((id) => id?._id?.toString?.() || id?.toString?.());
+  const canRun = isAdmin || editorIds.includes(currentUserId);
+
   const handleCodeRun = async (e) => {
     e.preventDefault();
+    if (!canRun) {
+      toast.error('Only room editors can run code.', { autoClose: 3000 });
+      return;
+    }
     setCompiling(true);
     document.body.style.cursor = "wait";
 

@@ -51,7 +51,6 @@ export const initSocket = (io) => {
                     members: room.members || [],
                     editors: (room.editors || []).map(m => m.toString()),
                     admin: room.admin?.toString(),
-                    isLocked: room.isLocked || false,
                     ended: room.ended || false,
                 });
 
@@ -87,13 +86,12 @@ export const initSocket = (io) => {
             try {
                 const room = await Room.findById(roomId);
                 if (!room) return;
-                if (room?.isLocked) {
-                    const isAdmin = room.admin?.toString() === userId;
-                    const isEditor = room.editors?.map(String).includes(userId);
-                    if (!isAdmin && !isEditor) {
-                        socket.emit('actionDenied', { reason: 'Room is locked' });
-                        return;
-                    }
+
+                const isAdmin = room.admin?.toString() === userId;
+                const isEditor = room.editors?.map(String).includes(userId);
+                if (!isAdmin && !isEditor) {
+                    socket.emit('actionDenied', { reason: 'Only room editors can edit code' });
+                    return;
                 }
 
                 // Update shared code and language
@@ -144,17 +142,17 @@ export const initSocket = (io) => {
 
                 if (room.ended) return socket.emit('actionDenied', { reason: 'Session ended' });
 
-                // Permission: admin or editor allowed to run; if not locked, anyone in members can run
+                // Permission: only admin or editor may run code
                 const isAdmin = room.admin?.toString() === userId;
                 const isEditor = room.editors?.map(String).includes(userId);
                 const isMember = room.members?.map(String).includes(userId);
 
-                if (room.isLocked && !isAdmin && !isEditor) {
-                    return socket.emit('actionDenied', { reason: 'Run denied - room is locked' });
-                }
-
                 if (!isMember && !isAdmin && !isEditor) {
                     return socket.emit('actionDenied', { reason: 'Not a member of room' });
+                }
+
+                if (!isAdmin && !isEditor) {
+                    return socket.emit('actionDenied', { reason: 'Only room editors can run code' });
                 }
 
                 const judge0LangId = getJudge0LanguageId(language);
@@ -224,22 +222,6 @@ export const initSocket = (io) => {
                 }
             } catch (err) {
                 console.error('remove-user error:', err.message);
-            }
-        })
-
-        socket.on('lock-editor', async (data) => {
-            const { roomId, lock } = data; // lock: true|false
-            try {
-                const room = await Room.findById(roomId);
-                if (!room) return;
-                if (room.admin?.toString() !== socket.user.id) return socket.emit('actionDenied', { reason: 'Only owner can lock/unlock' });
-
-                room.isLocked = !!lock;
-                await room.save();
-                io.to(roomId).emit(room.isLocked ? 'roomLocked' : 'roomUnlocked', { by: socket.user.name });
-                io.to(roomId).emit('members-updated', { isLocked: room.isLocked });
-            } catch (err) {
-                console.error('lock-editor error:', err.message);
             }
         })
 
