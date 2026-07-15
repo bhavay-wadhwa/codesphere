@@ -1,12 +1,11 @@
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { closeTerminal } from "@/features/EditorSlice/terminalSlice.js";
 import Terminal, { ColorMode, TerminalOutput } from "react-terminal-ui";
-import { compileCode } from "@/api/user";
 import { toast } from "react-toastify";
 
-const TerminalComponent = () => {
+const TerminalComponent = ({ socket }) => {
   const dispatch = useDispatch();
   const isTerminalOpen = useSelector((state) => state.terminal.isTerminalOpen);
   const userCode = useSelector((state) => state.code.userCode);
@@ -34,44 +33,58 @@ const TerminalComponent = () => {
       .join("\n")
       .trim();
 
+    if (!socket) {
+      toast.error("Socket not connected", { autoClose: 3000 });
+      setCompiling(false);
+      document.body.style.cursor = "default";
+      return;
+    }
+
     let language = room?.language;
     language = language?.split(" ")[0].toLowerCase();
 
-    let code;
-    if (terminalUser === null) {
-      return;
-    } else if (terminalUser === "user") {
-      code = userCode;
-    } else if (terminalUser === "remoteUser") {
-      code = remoteUserCode;
-    }
+    let code = userCode;
 
-    const res = await compileCode({
-      input: normalized,
-      code: code,
-      language: language,
-    });
-    console.log(res);
-    if (!res) {
-      toast.error("Failed to run code", { autoClose: 3000 });
-      document.body.style.cursor = "default";
-      setCompiling(false);
-      return;
-    }
+    // Emit run request to server; server will broadcast result to all members
+    socket.emit('run-code', { roomId: room?._id, code, language, input: normalized });
 
-    if (res === "Time Limit Exceeded") {
-      setTerminalLineData(res);
-    } else {
-      const lines = res.split("\n");
-      const terminalData = lines.map((line, index) => (
-        <TerminalOutput key={index}>{line}</TerminalOutput>
-      ));
-      setTerminalLineData(terminalData);
-    }
-
+    // wait for run-result event (handled below by socket listener)
     setCompiling(false);
     document.body.style.cursor = "default";
   };
+
+  // Listen for run results from server
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleRunResult = ({ run, ranBy }) => {
+      if (!run) return;
+      const output = run.stdout || run.stderr || '';
+      const lines = (output || '').toString().split('\n');
+      const terminalData = lines.map((line, index) => (
+        <TerminalOutput key={index}>{line}</TerminalOutput>
+      ));
+      setTerminalLineData(terminalData.length ? terminalData : [<TerminalOutput key={1}>{''}</TerminalOutput>]);
+    };
+
+    const handleRunError = ({ message }) => {
+      toast.error(message || 'Run failed');
+    };
+
+    const handleActionDenied = ({ reason }) => {
+      toast.error(reason || 'Action denied');
+    };
+
+    socket.on('run-result', handleRunResult);
+    socket.on('run-error', handleRunError);
+    socket.on('actionDenied', handleActionDenied);
+
+    return () => {
+      socket.off('run-result', handleRunResult);
+      socket.off('run-error', handleRunError);
+      socket.off('actionDenied', handleActionDenied);
+    };
+  }, [socket]);
 
   return (
     <div

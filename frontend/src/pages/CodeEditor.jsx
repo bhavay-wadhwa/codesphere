@@ -129,7 +129,7 @@ const CodeEditor = () => {
           <EditorSidebar socket={socketInstance} />
           <TopBar />
           <EditorComponent socket={socketInstance} />
-          <Terminal />
+          <Terminal socket={socketInstance} />
         </div>
       )}
     </>

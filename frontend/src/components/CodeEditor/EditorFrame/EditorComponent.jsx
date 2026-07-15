@@ -17,10 +17,14 @@ const EditorComponent = ({ socket }) => {
 
   const room = useSelector((state) => state.room.room.roomDetails);
   const userCode = useSelector((state) => state.code.userCode);
+  const userId = useSelector((state) => state.profile.user._id);
+  const userName = useSelector((state) => state.profile.user.firstName);
   const [language, setLanguage] = useState(null);
   const lastEmittedCode = useRef("");
   const userCodeRef = useRef(userCode);
   const languageRef = useRef(room?.language);
+  const editorRef = useRef(null);
+  const decorationsRef = useRef([]);
 
   useEffect(() => {
 
@@ -36,7 +40,7 @@ const EditorComponent = ({ socket }) => {
     const intervalId = setInterval(() => {
       if(socket && roomId && languageRef.current) {
         if(userCodeRef.current !== lastEmittedCode.current) {
-          socket.emit("saveCode", { roomId, code: userCodeRef.current, language: languageRef.current });
+          socket.emit("editor-change", { roomId, code: userCodeRef.current, language: languageRef.current });
           lastEmittedCode.current = userCodeRef.current;
         }
       }
@@ -46,6 +50,55 @@ const EditorComponent = ({ socket }) => {
       setUserCode("");
     }
   },[]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleInitial = (data) => {
+      if (data?.code !== undefined) {
+        dispatch(setUserCode(data.code));
+        userCodeRef.current = data.code;
+      }
+      if (data?.language) {
+        languageRef.current = data.language;
+      }
+    };
+
+    const handleReceiveCode = (data) => {
+      if (data?.userId === userId) return; // ignore own updates
+      if (data?.code !== undefined) {
+        dispatch(setUserCode(data.code));
+        userCodeRef.current = data.code;
+      }
+    };
+
+    const handleCursorUpdated = ({ userId: uid, position, name }) => {
+      // Render a simple decoration for remote cursor
+      try {
+        const editor = editorRef.current;
+        if (!editor || !position) return;
+        const model = editor.getModel();
+        const line = Math.max(1, position.line + 1);
+        const column = Math.max(1, position.ch + 1);
+        const range = new monaco.Range(line, column, line, column);
+        const className = 'remote-cursor-' + (uid || 'x');
+        const newDec = [{ range, options: { className, stickiness: 1, hoverMessage: { value: name } } }];
+        decorationsRef.current = editor.deltaDecorations(decorationsRef.current, newDec);
+      } catch (err) {
+        // fail silently
+      }
+    };
+
+    socket.on('initialState', handleInitial);
+    socket.on('receiveCode', handleReceiveCode);
+    socket.on('cursor-updated', handleCursorUpdated);
+
+    return () => {
+      socket.off('initialState', handleInitial);
+      socket.off('receiveCode', handleReceiveCode);
+      socket.off('cursor-updated', handleCursorUpdated);
+    };
+  }, [socket, userId, dispatch]);
 
   useEffect(() => {
     if(monaco) {
@@ -86,6 +139,18 @@ const EditorComponent = ({ socket }) => {
     userCodeRef.current = value;
   }
 
+  const handleEditorMount = (editor, monacoIns) => {
+    editorRef.current = editor;
+    // cursor movement
+    editor.onDidChangeCursorPosition((ev) => {
+      const pos = ev.position; // {lineNumber, column}
+      const position = { line: pos.lineNumber - 1, ch: pos.column - 1 };
+      if (socket && roomId) {
+        socket.emit('cursor-move', { roomId, position });
+      }
+    });
+  }
+
   return (
     <div className=" w-full h-[92%] sm:h-[90%] flex flex-col md:flex-row ">
       {language && socket && userCode !== null && (
@@ -97,6 +162,7 @@ const EditorComponent = ({ socket }) => {
             defaultValue={defaultCodeArr[language === "cpp" ? "c++" : language]}
             value={userCode}
             onChange={handleCodeChange}
+            onMount={handleEditorMount}
             theme="custom-theme"
             options={{
               minimap: { enabled: false },
