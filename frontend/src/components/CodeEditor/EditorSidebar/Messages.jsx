@@ -39,7 +39,7 @@ const Messages = ({socket}) => {
     }
 
     if(roomAdmin !== user._id && !isRemoteMsgEnable){
-      toast.warning("Prohibited to see others screen by admin", {autoClose: 3000, position: "top-right"});
+      toast.warning("Messaging is disabled by the room owner", {autoClose: 3000, position: "top-right"});
       return;
     }
 
