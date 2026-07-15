@@ -84,6 +84,17 @@ const TopBar = ({ socket }) => {
         socket.emit('toggle-messages', { roomId, enable: !isMsgEnabled });
     }
 
+    const handleLeave = (e) => {
+        e?.preventDefault?.();
+        if (socket && roomId) {
+            socket.emit('leave-room', { roomId }, (res) => {
+                navigate('/');
+            });
+        } else {
+            navigate('/');
+        }
+    }
+
     return (
         <div className=' w-full h-[8%] sm:h-[10%] py-2 px-2 sm:px-4 flex items-center justify-between bg-[#121212] border-b border-b-slate-700  '>
             <div className=' flex items-center gap-1 sm:gap-5'>
@@ -99,7 +110,7 @@ const TopBar = ({ socket }) => {
                 <Button onClick={handleCopyRoomId} className="bg-emerald-400 hidden sm:block">Copy Room ID</Button>
                 <div onClick={handleCopyRoomId} className='p-2 bg-emerald-400 rounded-full cursor-pointer block sm:hidden '><TbCopy size={24} /></div>
 
-                <span onClick={() => navigate("/")} className="material-symbols-outlined bg-red-600 p-2 rounded-full cursor-pointer">call_end</span>
+                <span onClick={handleLeave} className="material-symbols-outlined bg-red-600 p-2 rounded-full cursor-pointer">call_end</span>
             </div>
                         <div className=' flex items-center gap-2 sm:gap-5'>
                                 {isOwner && (

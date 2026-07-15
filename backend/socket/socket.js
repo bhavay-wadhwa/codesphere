@@ -281,6 +281,34 @@ export const initSocket = (io) => {
             }
         })
 
+        // Voluntary leave by a member: remove from members/editors and broadcast update
+        socket.on('leave-room', async (data, ack) => {
+            const { roomId } = data || {};
+            try {
+                if (!roomId) {
+                    if (ack) ack({ success: false, reason: 'roomId missing' });
+                    return;
+                }
+
+                await Room.findByIdAndUpdate(roomId, { $pull: { members: socket.user.id, editors: socket.user.id, cursors: { user: socket.user.id } } });
+
+                const updatedRoom = await Room.findById(roomId).populate('members');
+                const members = (updatedRoom?.members || []).map(m => ({ _id: m._id, firstName: m.firstName, lastName: m.lastName, email: m.email, imageUrl: m.imageUrl }));
+                const editors = (updatedRoom?.editors || []).map((id) => id.toString());
+                const admin = updatedRoom?.admin?.toString();
+                io.to(roomId).emit('members-updated', { members, editors, admin, isMsgEnable: updatedRoom.isMsgEnable || false });
+                io.to(roomId).emit('userLeft', { userId: socket.user.id });
+
+                // make this socket leave the room
+                socket.leave(roomId);
+
+                if (ack) ack({ success: true });
+            } catch (err) {
+                console.error('leave-room error:', err.message);
+                if (ack) ack({ success: false, reason: err.message });
+            }
+        })
+
         socket.on('disconnect', async () => {
             try {
                 const roomId = socket.roomId;
