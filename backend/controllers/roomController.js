@@ -30,6 +30,8 @@ export const createRoom = async (req, res) => {
             isMsgEnable: isMsgEnable,
             members: [admin._id],
             editors: [admin._id],
+            currentCode: "",
+            currentLanguage: language,
         })
         if(!room){
             return res.status(400).json({

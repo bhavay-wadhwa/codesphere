@@ -13,6 +13,17 @@ export const initSocket = (io) => {
     io.on('connection', (socket) => {
         console.log('user connected', socket?.user);
 
+        // small hash function to map user id to color index
+        function hashCode(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                const chr = str.charCodeAt(i);
+                hash = ((hash << 5) - hash) + chr;
+                hash |= 0;
+            }
+            return hash;
+        }
+
         socket.on('join-room', async (roomId) => { 
             //Join the specified room
 
@@ -20,10 +31,37 @@ export const initSocket = (io) => {
             socket.roomId = roomId;
             await addMember({email: socket.user.email, roomId: roomId});
             
-            // Notify all users in the room except the one that just joined
-            socket.to(roomId).emit('userJoined', {
-                userName: socket.user.name,
-            })
+            // Fetch room state and send initial shared editor/cursor state to the joining user
+            try {
+                const room = await Room.findById(roomId).populate('members editors');
+                // assign a color for the joining user (simple hash)
+                const colorPalette = ['#e6194b','#3cb44b','#ffe119','#4363d8','#f58231','#911eb4','#46f0f0','#f032e6','#bcf60c','#fabebe'];
+                const color = colorPalette[Math.abs(hashCode(socket.user.id)) % colorPalette.length];
+
+                // add cursor entry for user if not present
+                const existingCursor = room.cursors?.find(c => c.user?.toString() === socket.user.id);
+                if (!existingCursor) {
+                    room.cursors = room.cursors || [];
+                    room.cursors.push({ user: socket.user.id, name: socket.user.name, color, position: { line: 0, ch: 0 } });
+                    await room.save();
+                }
+
+                socket.emit('initialState', {
+                    code: room.currentCode || '',
+                    language: room.currentLanguage || room.language,
+                    cursors: room.cursors || [],
+                    members: room.members || [],
+                    editors: (room.editors || []).map(m => m.toString()),
+                    isLocked: room.isLocked || false,
+                    ended: room.ended || false,
+                });
+
+                socket.to(roomId).emit('userJoined', {
+                    userName: socket.user.name,
+                });
+            } catch (err) {
+                console.error('join-room error:', err.message);
+            }
         })
 
         socket.on('sendMessage', async (data) => {
@@ -33,11 +71,13 @@ export const initSocket = (io) => {
             socket.to(roomId).emit('receiveMessage');
         })
 
-        socket.on('saveCode', async (data) => {
+        // Receive full editor content updates from clients (keystrokes or autosave)
+        socket.on('editor-change', async (data) => {
             const { code, roomId, language } = data;
             const userId = socket.user.id;
             try {
                 const room = await Room.findById(roomId);
+                if (!room) return;
                 if (room?.isLocked) {
                     const isAdmin = room.admin?.toString() === userId;
                     const isEditor = room.editors?.map(String).includes(userId);
@@ -47,12 +87,42 @@ export const initSocket = (io) => {
                     }
                 }
 
-                await codeSave({code, roomId, userId, language});
-                socket.to(roomId).emit('receiveCode',{code, userId});
+                // Update shared code and language
+                room.currentCode = code ?? room.currentCode;
+                if (language) room.currentLanguage = language;
+                await room.save();
+
+                // Broadcast the update to other clients
+                socket.to(roomId).emit('receiveCode', { code: room.currentCode, userId: socket.user.id });
             } catch (err) {
-                console.error('saveCode socket error:', err.message);
+                console.error('editor-change error:', err.message);
             }
-        })
+        });
+
+        // Live cursor updates
+        socket.on('cursor-move', async (data) => {
+            const { roomId, position } = data; // position: {line, ch}
+            try {
+                const room = await Room.findById(roomId);
+                if (!room) return;
+                room.cursors = room.cursors || [];
+                const cursor = room.cursors.find(c => c.user?.toString() === socket.user.id);
+                if (cursor) {
+                    cursor.position = position;
+                } else {
+                    // assign color if missing
+                    const colorPalette = ['#e6194b','#3cb44b','#ffe119','#4363d8','#f58231','#911eb4','#46f0f0','#f032e6','#bcf60c','#fabebe'];
+                    const color = colorPalette[Math.abs(hashCode(socket.user.id)) % colorPalette.length];
+                    room.cursors.push({ user: socket.user.id, name: socket.user.name, color, position });
+                }
+                await room.save();
+
+                // Broadcast cursor to others
+                socket.to(roomId).emit('cursor-updated', { userId: socket.user.id, position, name: socket.user.name });
+            } catch (err) {
+                console.error('cursor-move error:', err.message);
+            }
+        });
 
         // Run code in Judge0 and broadcast results to all members
         socket.on('run-code', async (data) => {
