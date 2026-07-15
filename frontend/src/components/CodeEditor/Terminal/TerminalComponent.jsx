@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { useLocation } from 'react-router-dom';
 import { closeTerminal } from "@/features/EditorSlice/terminalSlice.js";
 import Terminal, { ColorMode, TerminalOutput } from "react-terminal-ui";
 import { toast } from "react-toastify";
@@ -21,9 +22,11 @@ const TerminalComponent = ({ socket }) => {
   ]);
 
   const currentUserId = useSelector((state) => state.profile.user._id);
-  const isAdmin = room?.admin?._id === currentUserId;
-  const editorIds = (room?.editors || []).map((id) => id?._id?.toString?.() || id?.toString?.());
+  const isAdmin = (room?.admin && (room?.admin.toString ? room.admin.toString() : room.admin)) === currentUserId;
+  const editorIds = (room?.editors || []).map((id) => (id && id.toString ? id.toString() : id));
   const canRun = isAdmin || editorIds.includes(currentUserId);
+  const location = useLocation();
+  const locationRoomId = location?.state?.roomId;
 
   const handleCodeRun = async (e) => {
     e.preventDefault();
@@ -55,7 +58,8 @@ const TerminalComponent = ({ socket }) => {
     let code = userCode;
 
     // Emit run request to server; server will broadcast result to all members
-    socket.emit('run-code', { roomId: room?._id, code, language, input: normalized });
+    const emitRoomId = locationRoomId || room?._id;
+    socket.emit('run-code', { roomId: emitRoomId, code, language, input: normalized });
 
     // wait for run-result event (handled below by socket listener)
     setCompiling(false);

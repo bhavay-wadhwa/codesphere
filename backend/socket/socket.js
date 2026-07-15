@@ -198,6 +198,25 @@ export const initSocket = (io) => {
             }
         })
 
+        socket.on('revoke-access', async (data) => {
+            const { roomId, userId } = data;
+            try {
+                const room = await Room.findById(roomId);
+                if (!room) return;
+                if (room.admin?.toString() !== socket.user.id) return socket.emit('actionDenied', { reason: 'Only owner can revoke access' });
+
+                await Room.findByIdAndUpdate(roomId, { $pull: { editors: userId } });
+                const updatedRoom = await Room.findById(roomId).populate('members');
+                const members = (updatedRoom?.members || []).map(m => ({ _id: m._id, firstName: m.firstName, lastName: m.lastName, email: m.email, imageUrl: m.imageUrl }));
+                const editors = (updatedRoom?.editors || []).map((id) => id.toString());
+                const admin = updatedRoom?.admin?.toString();
+                io.to(roomId).emit('members-updated', { members, editors, admin });
+                io.to(roomId).emit('accessChanged', { userId: userId.toString(), removedAs: 'editor' });
+            } catch (err) {
+                console.error('revoke-access error:', err.message);
+            }
+        })
+
         socket.on('remove-user', async (data) => {
             const { roomId, userId: targetId } = data;
             try {

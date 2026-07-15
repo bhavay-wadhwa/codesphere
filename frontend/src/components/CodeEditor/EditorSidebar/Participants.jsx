@@ -70,6 +70,15 @@ const Participants = ({setIsSidebarOpen, socket}) => {
     socket.emit('give-access', { roomId, email: member.email });
   }
 
+  const handleRevokeAccess = (member) => {
+    if (roomAdmin !== user._id) {
+      toast.error('Only owner can revoke access');
+      return;
+    }
+    if (!socket) return;
+    socket.emit('revoke-access', { roomId, userId: member._id });
+  }
+
   const handleRemoveUser = (member) => {
     if (roomAdmin !== user._id) {
       toast.error('Only owner can remove users');
@@ -106,8 +115,10 @@ const Participants = ({setIsSidebarOpen, socket}) => {
                 </div>
                 {roomAdmin === user._id && member._id !== userId && (
                   <div className=' flex gap-2'>
-                    {!editorIds.includes(member._id) && (
+                    {!editorIds.includes(member._id) ? (
                       <button onClick={() => handleGiveAccess(member)} className=' text-sm px-2 py-1 bg-green-600 rounded text-white'>Give Access</button>
+                    ) : (
+                      <button onClick={() => handleRevokeAccess(member)} className=' text-sm px-2 py-1 bg-yellow-600 rounded text-white'>Revoke</button>
                     )}
                     <button onClick={() => handleRemoveUser(member)} className=' text-sm px-2 py-1 bg-red-600 rounded text-white'>Remove</button>
                   </div>
