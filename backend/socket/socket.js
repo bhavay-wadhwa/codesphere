@@ -51,6 +51,7 @@ export const initSocket = (io) => {
                     members: room.members || [],
                     editors: (room.editors || []).map(m => m.toString()),
                     admin: room.admin?.toString(),
+                    isMsgEnable: room.isMsgEnable || false,
                     ended: room.ended || false,
                 });
 
@@ -63,7 +64,7 @@ export const initSocket = (io) => {
                     const members = (updatedRoom?.members || []).map(m => ({ _id: m._id, firstName: m.firstName, lastName: m.lastName, email: m.email, imageUrl: m.imageUrl }));
                     const editors = (updatedRoom?.editors || []).map((id) => id.toString());
                     const admin = updatedRoom?.admin?.toString();
-                    io.to(roomId).emit('members-updated', { members, editors, admin });
+                    io.to(roomId).emit('members-updated', { members, editors, admin, isMsgEnable: updatedRoom.isMsgEnable || false });
                 } catch (err) {
                     console.error('emit members-updated error:', err.message);
                 }
@@ -191,7 +192,7 @@ export const initSocket = (io) => {
                 const members = (updatedRoom?.members || []).map(m => ({ _id: m._id, firstName: m.firstName, lastName: m.lastName, email: m.email, imageUrl: m.imageUrl }));
                 const editors = (updatedRoom?.editors || []).map((id) => id.toString());
                 const admin = updatedRoom?.admin?.toString();
-                io.to(roomId).emit('members-updated', { members, editors, admin });
+                io.to(roomId).emit('members-updated', { members, editors, admin, isMsgEnable: updatedRoom.isMsgEnable || false });
                 io.to(roomId).emit('accessChanged', { userId: user._id.toString(), addedAs: 'editor' });
             } catch (err) {
                 console.error('give-access error:', err.message);
@@ -217,6 +218,27 @@ export const initSocket = (io) => {
             }
         })
 
+        socket.on('toggle-messages', async (data) => {
+            const { roomId, enable } = data;
+            try {
+                const room = await Room.findById(roomId);
+                if (!room) return;
+                if (room.admin?.toString() !== socket.user.id) return socket.emit('actionDenied', { reason: 'Only owner can change messaging settings' });
+
+                room.isMsgEnable = !!enable;
+                await room.save();
+
+                const updatedRoom = await Room.findById(roomId).populate('members');
+                const members = (updatedRoom?.members || []).map(m => ({ _id: m._id, firstName: m.firstName, lastName: m.lastName, email: m.email, imageUrl: m.imageUrl }));
+                const editors = (updatedRoom?.editors || []).map((id) => id.toString());
+                const admin = updatedRoom?.admin?.toString();
+                io.to(roomId).emit('members-updated', { members, editors, admin, isMsgEnable: updatedRoom.isMsgEnable || false });
+                io.to(roomId).emit('messageToggle', { by: socket.user.name, isMsgEnable: updatedRoom.isMsgEnable || false });
+            } catch (err) {
+                console.error('toggle-messages error:', err.message);
+            }
+        })
+
         socket.on('remove-user', async (data) => {
             const { roomId, userId: targetId } = data;
             try {
@@ -229,7 +251,7 @@ export const initSocket = (io) => {
                 const members = (updatedRoom?.members || []).map(m => ({ _id: m._id, firstName: m.firstName, lastName: m.lastName, email: m.email, imageUrl: m.imageUrl }));
                 const editors = (updatedRoom?.editors || []).map((id) => id.toString());
                 const admin = updatedRoom?.admin?.toString();
-                io.to(roomId).emit('members-updated', { members, editors, admin });
+                io.to(roomId).emit('members-updated', { members, editors, admin, isMsgEnable: updatedRoom.isMsgEnable || false });
                 io.to(roomId).emit('userRemoved', { userId: targetId });
                 io.to(roomId).emit('userLeft', { userId: targetId });
 

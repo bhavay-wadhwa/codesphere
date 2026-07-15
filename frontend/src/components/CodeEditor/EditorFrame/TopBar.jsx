@@ -21,6 +21,7 @@ const TopBar = ({ socket }) => {
     const userCode = useSelector((state) => state.code.userCode);
     const user = useSelector((state) => state.profile.user);
     const isOwner = roomData?.admin?.toString?.() === user?._id;
+    const isMsgEnabled = !!roomData?.isMsgEnable;
 
     const handleCopyRoomId = (e) => {
         e.preventDefault();
@@ -74,6 +75,15 @@ const TopBar = ({ socket }) => {
         URL.revokeObjectURL(url);
     }
 
+    const handleToggleMessages = (e) => {
+        e.preventDefault();
+        if (!socket) {
+            toast.error('Socket not connected', { autoClose: 3000 });
+            return;
+        }
+        socket.emit('toggle-messages', { roomId, enable: !isMsgEnabled });
+    }
+
     return (
         <div className=' w-full h-[8%] sm:h-[10%] py-2 px-2 sm:px-4 flex items-center justify-between bg-[#121212] border-b border-b-slate-700  '>
             <div className=' flex items-center gap-1 sm:gap-5'>
@@ -91,10 +101,15 @@ const TopBar = ({ socket }) => {
 
                 <span onClick={() => navigate("/")} className="material-symbols-outlined bg-red-600 p-2 rounded-full cursor-pointer">call_end</span>
             </div>
-            <div className=' flex items-center gap-2 sm:gap-5'>
-                <Button onClick={handleSaveCode} variant="outline"><MdSaveAlt /><span className=' hidden sm:block'>Save</span></Button>
-                <Button onClick={() => { dispatch(openTerminal()); dispatch(setTerminalUser("user")) }}><BsTerminal /><span className=' hidden sm:block'>Terminal</span></Button>
-            </div>
+                        <div className=' flex items-center gap-2 sm:gap-5'>
+                                {isOwner && (
+                                    <Button onClick={handleToggleMessages} variant={isMsgEnabled ? 'destructive' : 'secondary'}>
+                                        {isMsgEnabled ? 'Disable Messages' : 'Enable Messages'}
+                                    </Button>
+                                )}
+                                <Button onClick={handleSaveCode} variant="outline"><MdSaveAlt /><span className=' hidden sm:block'>Save</span></Button>
+                                <Button onClick={() => { dispatch(openTerminal()); dispatch(setTerminalUser("user")) }}><BsTerminal /><span className=' hidden sm:block'>Terminal</span></Button>
+                        </div>
         </div>
     )
 }
