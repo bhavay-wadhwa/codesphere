@@ -3,7 +3,6 @@ import React, { useEffect, useState } from 'react'
 import {SquareX} from 'lucide-react'
 import { useDispatch, useSelector } from 'react-redux'
 import { toggleSidebar } from '@/features/EditorSlice/sidebarSlice.js'
-import { openRemoteEditor } from '@/features/EditorSlice/remoteEditorSlice'
 import { useLocation } from 'react-router-dom'
 import { getMembers } from '@/api/user'
 import { setremoteUserId, setRemoteUserName } from '@/features/CodeSlice/codeSlice'
@@ -20,6 +19,8 @@ const Participants = ({setIsSidebarOpen, socket}) => {
   const roomId = location?.state?.roomId;
 
   const [participants, setParticipants] = useState([]);
+  const [editorIds, setEditorIds] = useState([]);
+  const [adminId, setAdminId] = useState(null);
 
   // Initialize from API as fallback
   const getParticipants = async () => {
@@ -35,10 +36,14 @@ const Participants = ({setIsSidebarOpen, socket}) => {
 
     const handleInitial = (data) => {
       if (data?.members) setParticipants(data.members);
+      if (data?.editors) setEditorIds((data.editors || []).map(String));
+      if (data?.admin) setAdminId(data.admin);
     };
 
-    const handleMembersUpdated = (members) => {
-      setParticipants(members || []);
+    const handleMembersUpdated = (payload) => {
+      setParticipants(payload?.members || []);
+      if (payload?.editors) setEditorIds((payload.editors || []).map(String));
+      if (payload?.admin) setAdminId(payload.admin);
     };
 
     const handleUserRemoved = ({ userId: removedId }) => {
@@ -91,10 +96,19 @@ const Participants = ({setIsSidebarOpen, socket}) => {
                     <AvatarFallback>{member?.firstName?.slice(0, 1)}{member?.lastName?.slice(0, 1)}</AvatarFallback>
                   </Avatar>
                 </div>
-                <div className='text-xl font-semibold flex-1'>{member?.firstName} {member?.lastName} {member._id == userId ? " (You)" : ""}</div>
+                <div className='flex-1'>
+                  <div className='text-xl font-semibold'>
+                    {member?.firstName} {member?.lastName} {member._id == userId ? " (You)" : ""}
+                  </div>
+                  <div className='text-xs text-slate-400'>
+                    {member._id === adminId ? 'Owner' : editorIds.includes(member._id) ? 'Editor' : 'Viewer'}
+                  </div>
+                </div>
                 {roomAdmin === user._id && member._id !== userId && (
                   <div className=' flex gap-2'>
-                    <button onClick={() => handleGiveAccess(member)} className=' text-sm px-2 py-1 bg-green-600 rounded text-white'>Give Access</button>
+                    {!editorIds.includes(member._id) && (
+                      <button onClick={() => handleGiveAccess(member)} className=' text-sm px-2 py-1 bg-green-600 rounded text-white'>Give Access</button>
+                    )}
                     <button onClick={() => handleRemoveUser(member)} className=' text-sm px-2 py-1 bg-red-600 rounded text-white'>Remove</button>
                   </div>
                 )}

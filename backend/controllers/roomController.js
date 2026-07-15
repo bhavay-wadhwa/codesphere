@@ -99,15 +99,19 @@ export const joinRoom = async (req, res) => {
             });
         }
 
+        await Room.findByIdAndUpdate(roomId, { $addToSet: { members: user._id } });
+
         if(!user.rooms.includes(roomId)){
             user.rooms.push(roomId);
             await user.save();
         }
 
+        const updatedRoom = await Room.findById(roomId);
+
         return res.status(200).json({
             success: true,
             message: "Joined Room successfully",
-            room
+            room: updatedRoom
         })
 
     } catch (error) {
@@ -117,26 +121,28 @@ export const joinRoom = async (req, res) => {
 }
 
 export const addMember = async (data) => {
-    try{
+    try {
         const roomId = data.roomId;
         const email = data.email;
 
-        const user = await User.findOne({email});
-        await Room.findByIdAndUpdate(roomId, {$push:{members:user._id}});
+        const user = await User.findOne({ email });
+        if (!user) return;
 
+        await Room.findByIdAndUpdate(roomId, { $addToSet: { members: user._id } });
     } catch (error) {
         console.error("Error in addMember", error);
     }
 }
 
 export const removeMember = async (data) => {
-    try{
+    try {
         const roomId = data.roomId;
         const email = data.email;
 
-        const user = await User.findOne({email});
-        await Room.findByIdAndUpdate(roomId, {$pull:{members:user._id}});
-        
+        const user = await User.findOne({ email });
+        if (!user) return;
+
+        await Room.findByIdAndUpdate(roomId, { $pull: { members: user._id, editors: user._id } });
     } catch (error) {
         console.error("Error in removeMember", error);
     }
@@ -171,11 +177,15 @@ export const getMembers = async (req, res) => {
         }
 
         const members = room.members;
+        const editors = (room.editors || []).map((id) => id.toString());
+        const admin = room.admin?.toString();
 
         return res.status(200).json({
             success: true,
             message: "Members fetched successfully",
             members,
+            editors,
+            admin,
         })
     } catch (error) {
         console.error("Error in getMembers", error);

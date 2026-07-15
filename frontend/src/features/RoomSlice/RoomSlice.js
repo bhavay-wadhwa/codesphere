@@ -21,6 +21,12 @@ export const roomSlice = createSlice({
         setRoomDetails: (state, action) => {
             state.room.roomDetails = action.payload
         },
+        updateRoomDetails: (state, action) => {
+            state.room.roomDetails = {
+                ...state.room.roomDetails,
+                ...action.payload,
+            }
+        },
     }
 })
 

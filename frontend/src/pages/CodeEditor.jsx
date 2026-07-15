@@ -1,9 +1,9 @@
-import { getCode, getRoomDetails } from "@/api/user";
+import { getRoomDetails } from "@/api/user";
 import EditorComponent from "@/components/CodeEditor/EditorFrame/EditorComponent";
 import TopBar from "@/components/CodeEditor/EditorFrame/TopBar";
 import EditorSidebar from "@/components/CodeEditor/EditorSidebar/EditorSidebar";
 import Terminal from "@/components/CodeEditor/Terminal/TerminalComponent";
-import { setRoomDetails } from "@/features/RoomSlice/RoomSlice";
+import { setRoomDetails, updateRoomDetails } from "@/features/RoomSlice/RoomSlice";
 import React, { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -14,10 +14,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 import { toast } from "react-toastify";
 import { toggleSidebar } from "@/features/EditorSlice/sidebarSlice";
-import { setRemoteUserCode, setUserCode } from "@/features/CodeSlice/codeSlice";
 import { closeTerminal } from "@/features/EditorSlice/terminalSlice";
-import { closeRemoteEditor } from "@/features/EditorSlice/remoteEditorSlice";
-import { defaultCodeArr } from "@/data/defaultCode";
 
 const CodeEditor = () => {
   const BACK_URL = import.meta.env.PROD
@@ -47,17 +44,6 @@ const CodeEditor = () => {
     dispatch(setRoomDetails(res.room));
   };
 
-  const getUserCode = async () => {
-    const res = await getCode(roomId);
-
-    if (!res) {
-      return;
-    }
-    console.log("get code:",res);
-
-    dispatch(setUserCode(res?.code?.code));
-  }
-
   useEffect(() => {
     if (!roomId) {
       navigate("/");
@@ -82,8 +68,8 @@ const CodeEditor = () => {
         console.log("Joining room");
       });
 
-      socket.on("userJoined", (socket) => {
-        toast.info(`${socket.userName} joined the room`, {
+      socket.on("userJoined", ({ userName }) => {
+        toast.info(`${userName} joined the room`, {
           position: "bottom-right",
           autoClose: 2000,
         });
@@ -99,23 +85,58 @@ const CodeEditor = () => {
         dispatch(toogleparticipantsChange());
       });
 
+      socket.on("removedFromRoom", () => {
+        toast.error("You have been removed from the room.", { autoClose: 3000 });
+        navigate("/");
+      });
+
+      socket.on("initialState", (data) => {
+        if (data) {
+          dispatch(setRoomDetails(data));
+        }
+      });
+
+      socket.on("members-updated", (payload) => {
+        if (payload) {
+          dispatch(updateRoomDetails(payload));
+        }
+      });
+
+      socket.on("roomLocked", ({ by }) => {
+        toast.info(`Room locked by ${by}`);
+        dispatch(updateRoomDetails({ isLocked: true }));
+      });
+
+      socket.on("roomUnlocked", ({ by }) => {
+        toast.info(`Room unlocked by ${by}`);
+        dispatch(updateRoomDetails({ isLocked: false }));
+      });
+
+      socket.on("roomLocked", ({ by }) => {
+        toast.info(`Room locked by ${by}`);
+      });
+
+      socket.on("roomUnlocked", ({ by }) => {
+        toast.info(`Room unlocked by ${by}`);
+      });
     }
 
     getRoomData();
-    getUserCode();
 
     return () => {
-      if(socket) {
-        socket.off("connect_error");
-        socket.off("connect_failed");
+      if (socket) {
+        socket.off("connect_error", handleConnectionFail);
+        socket.off("connect_failed", handleConnectionFail);
         socket.off("userJoined");
         socket.off("receiveMessage");
         socket.off("userLeft");
+        socket.off("removedFromRoom");
+        socket.off("initialState");
+        socket.off("members-updated");
+        socket.off("roomLocked");
+        socket.off("roomUnlocked");
         socket.disconnect();
         dispatch(closeTerminal());
-        dispatch(closeRemoteEditor());
-        dispatch(setUserCode(defaultCodeArr[room?.language?.split(" ")[0].toLowerCase()]));
-        dispatch(setRemoteUserCode(''));
         dispatch(setRoomDetails({}));
         dispatch(toggleSidebar(false));
       }
@@ -127,7 +148,7 @@ const CodeEditor = () => {
       {socketInstance && (
         <div className="relative w-full h-screen overflow-y-hidden">
           <EditorSidebar socket={socketInstance} />
-          <TopBar />
+          <TopBar socket={socketInstance} />
           <EditorComponent socket={socketInstance} />
           <Terminal socket={socketInstance} />
         </div>

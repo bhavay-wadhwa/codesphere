@@ -25,20 +25,18 @@ export const initSocket = (io) => {
         }
 
         socket.on('join-room', async (roomId) => { 
-            //Join the specified room
-
+            // Join the specified room
             socket.join(roomId);
             socket.roomId = roomId;
-            await addMember({email: socket.user.email, roomId: roomId});
-            
-            // Fetch room state and send initial shared editor/cursor state to the joining user
+            await addMember({ email: socket.user.email, roomId });
+
             try {
                 const room = await Room.findById(roomId).populate('members editors');
-                // assign a color for the joining user (simple hash)
+                if (!room) return;
+
                 const colorPalette = ['#e6194b','#3cb44b','#ffe119','#4363d8','#f58231','#911eb4','#46f0f0','#f032e6','#bcf60c','#fabebe'];
                 const color = colorPalette[Math.abs(hashCode(socket.user.id)) % colorPalette.length];
 
-                // add cursor entry for user if not present
                 const existingCursor = room.cursors?.find(c => c.user?.toString() === socket.user.id);
                 if (!existingCursor) {
                     room.cursors = room.cursors || [];
@@ -52,22 +50,24 @@ export const initSocket = (io) => {
                     cursors: room.cursors || [],
                     members: room.members || [],
                     editors: (room.editors || []).map(m => m.toString()),
+                    admin: room.admin?.toString(),
                     isLocked: room.isLocked || false,
                     ended: room.ended || false,
                 });
 
-                    socket.to(roomId).emit('userJoined', {
-                        userName: socket.user.name,
-                    });
+                socket.to(roomId).emit('userJoined', {
+                    userName: socket.user.name,
+                });
 
-                    // Broadcast updated members list
-                    try {
-                        const updatedRoom = await Room.findById(roomId).populate('members');
-                        const members = (updatedRoom?.members || []).map(m => ({ _id: m._id, firstName: m.firstName, lastName: m.lastName, email: m.email, imageUrl: m.imageUrl }));
-                        io.to(roomId).emit('members-updated', members);
-                    } catch (err) {
-                        console.error('emit members-updated error:', err.message);
-                    }
+                try {
+                    const updatedRoom = await Room.findById(roomId).populate('members');
+                    const members = (updatedRoom?.members || []).map(m => ({ _id: m._id, firstName: m.firstName, lastName: m.lastName, email: m.email, imageUrl: m.imageUrl }));
+                    const editors = (updatedRoom?.editors || []).map((id) => id.toString());
+                    const admin = updatedRoom?.admin?.toString();
+                    io.to(roomId).emit('members-updated', { members, editors, admin });
+                } catch (err) {
+                    console.error('emit members-updated error:', err.message);
+                }
             } catch (err) {
                 console.error('join-room error:', err.message);
             }
@@ -188,9 +188,13 @@ export const initSocket = (io) => {
                 const user = await User.findOne({ email });
                 if (!user) return socket.emit('actionDenied', { reason: 'User not found' });
 
-                // add to members/editors
                 await Room.findByIdAndUpdate(roomId, { $addToSet: { members: user._id, editors: user._id } });
-                io.to(roomId).emit('accessChanged', { userId: user._id, addedAs: 'editor' });
+                const updatedRoom = await Room.findById(roomId).populate('members');
+                const members = (updatedRoom?.members || []).map(m => ({ _id: m._id, firstName: m.firstName, lastName: m.lastName, email: m.email, imageUrl: m.imageUrl }));
+                const editors = (updatedRoom?.editors || []).map((id) => id.toString());
+                const admin = updatedRoom?.admin?.toString();
+                io.to(roomId).emit('members-updated', { members, editors, admin });
+                io.to(roomId).emit('accessChanged', { userId: user._id.toString(), addedAs: 'editor' });
             } catch (err) {
                 console.error('give-access error:', err.message);
             }
@@ -203,8 +207,21 @@ export const initSocket = (io) => {
                 if (!room) return;
                 if (room.admin?.toString() !== socket.user.id) return socket.emit('actionDenied', { reason: 'Only owner can remove users' });
 
-                await Room.findByIdAndUpdate(roomId, { $pull: { members: targetId, editors: targetId } });
+                await Room.findByIdAndUpdate(roomId, { $pull: { members: targetId, editors: targetId, cursors: { user: targetId } } });
+                const updatedRoom = await Room.findById(roomId).populate('members');
+                const members = (updatedRoom?.members || []).map(m => ({ _id: m._id, firstName: m.firstName, lastName: m.lastName, email: m.email, imageUrl: m.imageUrl }));
+                const editors = (updatedRoom?.editors || []).map((id) => id.toString());
+                const admin = updatedRoom?.admin?.toString();
+                io.to(roomId).emit('members-updated', { members, editors, admin });
                 io.to(roomId).emit('userRemoved', { userId: targetId });
+                io.to(roomId).emit('userLeft', { userId: targetId });
+
+                for (const [socketId, sock] of io.of("/").sockets) {
+                    if (sock.user?.id === targetId && sock.roomId === roomId) {
+                        sock.leave(roomId);
+                        sock.emit('removedFromRoom', { roomId });
+                    }
+                }
             } catch (err) {
                 console.error('remove-user error:', err.message);
             }
@@ -220,6 +237,7 @@ export const initSocket = (io) => {
                 room.isLocked = !!lock;
                 await room.save();
                 io.to(roomId).emit(room.isLocked ? 'roomLocked' : 'roomUnlocked', { by: socket.user.name });
+                io.to(roomId).emit('members-updated', { isLocked: room.isLocked });
             } catch (err) {
                 console.error('lock-editor error:', err.message);
             }
@@ -242,13 +260,20 @@ export const initSocket = (io) => {
 
         socket.on('disconnect', async () => {
             try {
-                await removeMember({email: socket.user.email, roomId: socket.roomId});
-                io.to(socket.roomId).emit('userLeft');
-                const updatedRoom = await Room.findById(socket.roomId).populate('members');
-                const members = (updatedRoom?.members || []).map(m => ({ _id: m._id, firstName: m.firstName, lastName: m.lastName, email: m.email, imageUrl: m.imageUrl }));
-                io.to(socket.roomId).emit('members-updated', members);
+                const roomId = socket.roomId;
+                if (!roomId) return;
+
+                const stillConnected = Array.from(io.of("/").sockets.values()).some((sock) => {
+                    return sock.id !== socket.id && sock.roomId === roomId && sock.user?.id === socket.user.id;
+                });
+
+                if (!stillConnected) {
+                    await Room.findByIdAndUpdate(roomId, { $pull: { cursors: { user: socket.user.id } } });
+                }
+
+                io.to(roomId).emit('userLeft', { userId: socket.user.id });
             } catch (err) {
-                console.error('disconnect members-updated error:', err.message);
+                console.error('disconnect error:', err.message);
             }
         })
     })

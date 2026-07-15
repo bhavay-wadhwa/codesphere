@@ -1,13 +1,12 @@
 import { Editor, useMonaco } from "@monaco-editor/react";
 import React, { useEffect, useRef, useState } from "react";
-import RemoteEditor from "./RemoteEditor";
 import { useDispatch, useSelector } from "react-redux";
 import { useLocation } from "react-router-dom";
 import { setUserCode } from "@/features/CodeSlice/codeSlice";
+import { setRoomDetails, updateRoomDetails } from "@/features/RoomSlice/RoomSlice";
 import { defaultCodeArr } from "@/data/defaultCode.js";
 
 const EditorComponent = ({ socket }) => {
-  const isRemoteEditorOpen = useSelector((state) => state.remoteEditor.isRemoteEditorOpen);
   const aboveTablet = window.innerWidth >= 768 ? true : false;
 
   const dispatch = useDispatch();
@@ -18,13 +17,14 @@ const EditorComponent = ({ socket }) => {
   const room = useSelector((state) => state.room.room.roomDetails);
   const userCode = useSelector((state) => state.code.userCode);
   const userId = useSelector((state) => state.profile.user._id);
-  const userName = useSelector((state) => state.profile.user.firstName);
   const [language, setLanguage] = useState(null);
-  const lastEmittedCode = useRef("");
+  const [canEdit, setCanEdit] = useState(true);
+  const [isViewer, setIsViewer] = useState(false);
   const userCodeRef = useRef(userCode);
   const languageRef = useRef(room?.language);
   const editorRef = useRef(null);
-  const decorationsRef = useRef([]);
+  const cursorDecorationsRef = useRef({});
+  const changeTimer = useRef(null);
 
   useEffect(() => {
 
@@ -36,20 +36,25 @@ const EditorComponent = ({ socket }) => {
   }, [room?.language]);
 
   useEffect(() => {
-    lastEmittedCode.current = userCodeRef.current;
-    const intervalId = setInterval(() => {
-      if(socket && roomId && languageRef.current) {
-        if(userCodeRef.current !== lastEmittedCode.current) {
-          socket.emit("editor-change", { roomId, code: userCodeRef.current, language: languageRef.current });
-          lastEmittedCode.current = userCodeRef.current;
-        }
-      }
-    },1000);
+    const updateEditMode = () => {
+      const editorIds = (room?.editors || []).map(String);
+      const isAdmin = room?.admin?.toString?.() === userId;
+      const hasEditor = isAdmin || editorIds.includes(userId);
+      const locked = !!room?.isLocked;
+      setCanEdit(!locked || hasEditor);
+      setIsViewer(locked && !hasEditor);
+    };
+
+    updateEditMode();
+  }, [room, userId]);
+
+  useEffect(() => {
     return () => {
-      clearInterval(intervalId);
-      setUserCode("");
-    }
-  },[]);
+      if (changeTimer.current) {
+        clearTimeout(changeTimer.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!socket) return;
@@ -61,44 +66,76 @@ const EditorComponent = ({ socket }) => {
       }
       if (data?.language) {
         languageRef.current = data.language;
+        setLanguage(data.language.split(" ")[0].toLowerCase() === "c++" ? "cpp" : data.language.split(" ")[0].toLowerCase());
       }
+      dispatch(setRoomDetails(data));
     };
 
     const handleReceiveCode = (data) => {
-      if (data?.userId === userId) return; // ignore own updates
+      if (data?.userId === userId) return;
       if (data?.code !== undefined) {
         dispatch(setUserCode(data.code));
         userCodeRef.current = data.code;
       }
+      if (data?.language) {
+        languageRef.current = data.language;
+        setLanguage(data.language.split(" ")[0].toLowerCase() === "c++" ? "cpp" : data.language.split(" ")[0].toLowerCase());
+      }
     };
 
     const handleCursorUpdated = ({ userId: uid, position, name }) => {
-      // Render a simple decoration for remote cursor
       try {
         const editor = editorRef.current;
         if (!editor || !position) return;
-        const model = editor.getModel();
         const line = Math.max(1, position.line + 1);
         const column = Math.max(1, position.ch + 1);
         const range = new monaco.Range(line, column, line, column);
-        const className = 'remote-cursor-' + (uid || 'x');
-        const newDec = [{ range, options: { className, stickiness: 1, hoverMessage: { value: name } } }];
-        decorationsRef.current = editor.deltaDecorations(decorationsRef.current, newDec);
+        const decorationId = cursorDecorationsRef.current[uid] ? [cursorDecorationsRef.current[uid]] : [];
+        const newDec = [{
+          range,
+          options: {
+            className: 'remote-cursor',
+            stickiness: 1,
+            hoverMessage: { value: name },
+          },
+        }];
+        const updated = editor.deltaDecorations(decorationId, newDec);
+        cursorDecorationsRef.current[uid] = updated[0];
       } catch (err) {
         // fail silently
       }
     };
 
+    const handleUserLeft = ({ userId: uid }) => {
+      const editor = editorRef.current;
+      if (!editor || !cursorDecorationsRef.current[uid]) return;
+      editor.deltaDecorations([cursorDecorationsRef.current[uid]], []);
+      delete cursorDecorationsRef.current[uid];
+    };
+
     socket.on('initialState', handleInitial);
     socket.on('receiveCode', handleReceiveCode);
     socket.on('cursor-updated', handleCursorUpdated);
+    socket.on('userLeft', handleUserLeft);
+    socket.on('accessChanged', (payload) => {
+      if (payload?.userId === userId) {
+        const editorIds = (room?.editors || []).map(String);
+        const isAdmin = room?.admin?.toString?.() === userId;
+        const hasEditor = isAdmin || editorIds.includes(userId);
+        const locked = !!room?.isLocked;
+        setCanEdit(!locked || hasEditor);
+        setIsViewer(locked && !hasEditor);
+      }
+    });
 
     return () => {
       socket.off('initialState', handleInitial);
       socket.off('receiveCode', handleReceiveCode);
       socket.off('cursor-updated', handleCursorUpdated);
+      socket.off('userLeft', handleUserLeft);
+      socket.off('accessChanged');
     };
-  }, [socket, userId, dispatch]);
+  }, [socket, userId, dispatch, room]);
 
   useEffect(() => {
     if(monaco) {
@@ -135,15 +172,25 @@ const EditorComponent = ({ socket }) => {
 },[monaco])
 
   const handleCodeChange = (value) => {
+    if (!canEdit) return;
+
     dispatch(setUserCode(value));
     userCodeRef.current = value;
+
+    if (socket && roomId && languageRef.current) {
+      if (changeTimer.current) {
+        clearTimeout(changeTimer.current);
+      }
+      changeTimer.current = setTimeout(() => {
+        socket.emit("editor-change", { roomId, code: userCodeRef.current, language: languageRef.current });
+      }, 120);
+    }
   }
 
   const handleEditorMount = (editor, monacoIns) => {
     editorRef.current = editor;
-    // cursor movement
     editor.onDidChangeCursorPosition((ev) => {
-      const pos = ev.position; // {lineNumber, column}
+      const pos = ev.position;
       const position = { line: pos.lineNumber - 1, ch: pos.column - 1 };
       if (socket && roomId) {
         socket.emit('cursor-move', { roomId, position });
@@ -154,10 +201,10 @@ const EditorComponent = ({ socket }) => {
   return (
     <div className=" w-full h-[92%] sm:h-[90%] flex flex-col md:flex-row ">
       {language && socket && userCode !== null && (
-        <>
+        <div className="w-full h-full">
           <Editor
-            className={` ${isRemoteEditorOpen && "h-[50vh]"} md:h-full `}
-            width={isRemoteEditorOpen && aboveTablet ? "50%" : "100%"}
+            className="h-full md:h-full"
+            width="100%"
             defaultLanguage={language}
             defaultValue={defaultCodeArr[language === "cpp" ? "c++" : language]}
             value={userCode}
@@ -172,19 +219,23 @@ const EditorComponent = ({ socket }) => {
               scrollBeyondLastLine: true,
               highlightActiveLine: true,
               suggestOnTriggerCharacters: true,
+              readOnly: !canEdit,
               scrollbar: {
-                vertical: "invisible", // Show vertical scrollbar always
-                horizontal: "visible", // Show horizontal scrollbar always
-                verticalScrollbarSize: 12, // Set vertical scrollbar size
-                horizontalScrollbarSize: 12, // Set horizontal scrollbar size
-                verticalSliderSize: 10, // Set size of the scrollbar slider (thumb)
+                vertical: "invisible",
+                horizontal: "visible",
+                verticalScrollbarSize: 12,
+                horizontalScrollbarSize: 12,
+                verticalSliderSize: 10,
                 horizontalSliderSize: 10,
               },
             }}
           />
-
-          {isRemoteEditorOpen && <RemoteEditor language={language} socket={socket} />}
-        </>
+        </div>
+      )}
+      {isViewer && (
+        <div className="absolute top-16 right-4 px-3 py-2 rounded-md bg-yellow-500/10 text-yellow-200 border border-yellow-500/30 text-sm">
+          You are in view-only mode while the room is locked.
+        </div>
       )}
     </div>
   );
