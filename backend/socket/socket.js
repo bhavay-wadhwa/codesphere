@@ -56,9 +56,18 @@ export const initSocket = (io) => {
                     ended: room.ended || false,
                 });
 
-                socket.to(roomId).emit('userJoined', {
-                    userName: socket.user.name,
-                });
+                    socket.to(roomId).emit('userJoined', {
+                        userName: socket.user.name,
+                    });
+
+                    // Broadcast updated members list
+                    try {
+                        const updatedRoom = await Room.findById(roomId).populate('members');
+                        const members = (updatedRoom?.members || []).map(m => ({ _id: m._id, firstName: m.firstName, lastName: m.lastName, email: m.email, imageUrl: m.imageUrl }));
+                        io.to(roomId).emit('members-updated', members);
+                    } catch (err) {
+                        console.error('emit members-updated error:', err.message);
+                    }
             } catch (err) {
                 console.error('join-room error:', err.message);
             }
@@ -232,8 +241,15 @@ export const initSocket = (io) => {
         })
 
         socket.on('disconnect', async () => {
-            await removeMember({email: socket.user.email, roomId: socket.roomId});
-            io.to(socket.roomId).emit('userLeft');
+            try {
+                await removeMember({email: socket.user.email, roomId: socket.roomId});
+                io.to(socket.roomId).emit('userLeft');
+                const updatedRoom = await Room.findById(socket.roomId).populate('members');
+                const members = (updatedRoom?.members || []).map(m => ({ _id: m._id, firstName: m.firstName, lastName: m.lastName, email: m.email, imageUrl: m.imageUrl }));
+                io.to(socket.roomId).emit('members-updated', members);
+            } catch (err) {
+                console.error('disconnect members-updated error:', err.message);
+            }
         })
     })
 }

@@ -9,9 +9,7 @@ import { getMembers } from '@/api/user'
 import { setremoteUserId, setRemoteUserName } from '@/features/CodeSlice/codeSlice'
 import { toast } from 'react-toastify'
 
-const Participants = ({setIsSidebarOpen}) => {
-  
-  const participantsChange = useSelector((state) => state.room.room.participantsChange);
+const Participants = ({setIsSidebarOpen, socket}) => {
   const isRemoteVisible = useSelector((state) => state.room.room.roomDetails.isVisible);
   const roomAdmin = useSelector((state) => state.room.room.roomDetails.admin);
   const user = useSelector((state) => state.profile.user);
@@ -23,35 +21,57 @@ const Participants = ({setIsSidebarOpen}) => {
 
   const [participants, setParticipants] = useState([]);
 
+  // Initialize from API as fallback
   const getParticipants = async () => {
-    await new Promise(r => setTimeout(r,1000));
     const res = await getMembers(roomId);
-
-    if(!res){
-      return;
-    }
-
-    let members = res?.members;
-    setParticipants(members);
-    console.log("Room Memebers:",members);
+    if(!res) return;
+    setParticipants(res.members || []);
   }
 
   useEffect(() => {
     getParticipants();
 
-  }, [participantsChange])
+    if (!socket) return;
 
-  const handleOpenRemoteEditor = (remoteUser) => {
-    if(roomAdmin !== user._id && !isRemoteVisible){
-      toast.warning("Prohibited to see others screen by admin", {autoClose: 3000, position: "top-right"});
+    const handleInitial = (data) => {
+      if (data?.members) setParticipants(data.members);
+    };
+
+    const handleMembersUpdated = (members) => {
+      setParticipants(members || []);
+    };
+
+    const handleUserRemoved = ({ userId: removedId }) => {
+      setParticipants((p) => p.filter(m => m._id !== removedId));
+    };
+
+    socket.on('initialState', handleInitial);
+    socket.on('members-updated', handleMembersUpdated);
+    socket.on('userRemoved', handleUserRemoved);
+
+    return () => {
+      socket.off('initialState', handleInitial);
+      socket.off('members-updated', handleMembersUpdated);
+      socket.off('userRemoved', handleUserRemoved);
+    }
+  }, [socket])
+
+  const handleGiveAccess = (member) => {
+    if (roomAdmin !== user._id) {
+      toast.error('Only owner can give access');
       return;
     }
+    if (!socket) return;
+    socket.emit('give-access', { roomId, email: member.email });
+  }
 
-    if(remoteUser.email != user.email){
-      dispatch(setremoteUserId(remoteUser._id));
-      dispatch(setRemoteUserName(remoteUser.firstName + " " + remoteUser.lastName));
-      dispatch(openRemoteEditor());
+  const handleRemoveUser = (member) => {
+    if (roomAdmin !== user._id) {
+      toast.error('Only owner can remove users');
+      return;
     }
+    if (!socket) return;
+    socket.emit('remove-user', { roomId, userId: member._id });
   }
   
 
@@ -62,16 +82,22 @@ const Participants = ({setIsSidebarOpen}) => {
       <div className='flex justify-center font-semibold text-lg pb-1 '>Participants</div>
       <div className=' h-[80%] w-full flex flex-col gap-4 overflow-y-auto  '>
         {
-          participants.map((user, index) => {
+          participants.map((member, index) => {
             return (
-              <div onClick={() => {handleOpenRemoteEditor(user)}} key={index} className=' w-full flex items-center gap-6 cursor-pointer'>
+              <div key={index} className=' w-full flex items-center gap-6'>
                 <div className=' border-2 border-transparent bg-gradient-to-tr from-[#833AB4] via-[#FD1D1D] to-[#FCB045] rounded-full'>
                   <Avatar className="rounded-full">
-                    <AvatarImage src={user?.imageUrl} />
-                    <AvatarFallback>{user?.firstName?.slice(0, 1)}{user?.lastName?.slice(0, 1)}</AvatarFallback>
+                    <AvatarImage src={member?.imageUrl} />
+                    <AvatarFallback>{member?.firstName?.slice(0, 1)}{member?.lastName?.slice(0, 1)}</AvatarFallback>
                   </Avatar>
                 </div>
-                <div className='text-xl font-semibold'>{user?.firstName} {user?.lastName} {user._id == userId ? " (You)" : ""}</div>
+                <div className='text-xl font-semibold flex-1'>{member?.firstName} {member?.lastName} {member._id == userId ? " (You)" : ""}</div>
+                {roomAdmin === user._id && member._id !== userId && (
+                  <div className=' flex gap-2'>
+                    <button onClick={() => handleGiveAccess(member)} className=' text-sm px-2 py-1 bg-green-600 rounded text-white'>Give Access</button>
+                    <button onClick={() => handleRemoveUser(member)} className=' text-sm px-2 py-1 bg-red-600 rounded text-white'>Remove</button>
+                  </div>
+                )}
               </div>
             )
           })

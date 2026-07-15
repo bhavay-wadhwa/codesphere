@@ -17,7 +17,7 @@ const EditorSidebar = ({socket}) => {
             className={` max-w-[340px] min-h-screen border absolute z-30  bg-black rounded-md ${isSidebarOpen ? "left-0" : "left-[-100%]"} transition-all duration-500 ease-in-out`}
         >
             <ResizablePanel defaultSize={40}>
-                <Participants />
+                <Participants socket={socket} />
             </ResizablePanel>
 
             <ResizableHandle />
