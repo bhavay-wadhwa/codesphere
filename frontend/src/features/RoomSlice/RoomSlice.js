@@ -30,6 +30,6 @@ export const roomSlice = createSlice({
     }
 })
 
-export const { toogleparticipantsChange, setRoomDetails, toogleNewMessage } = roomSlice.actions
+export const { toogleparticipantsChange, setRoomDetails, updateRoomDetails, toogleNewMessage } = roomSlice.actions
 
 export default roomSlice.reducer
