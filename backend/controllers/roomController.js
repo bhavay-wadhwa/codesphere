@@ -22,7 +22,15 @@ export const createRoom = async (req, res) => {
             });
         }
 
-        const room = await Room.create({name:roomName, language: language, admin: admin._id, isVisible: isVisible, isMsgEnable: isMsgEnable})
+        const room = await Room.create({
+            name: roomName,
+            language: language,
+            admin: admin._id,
+            isVisible: isVisible,
+            isMsgEnable: isMsgEnable,
+            members: [admin._id],
+            editors: [admin._id],
+        })
         if(!room){
             return res.status(400).json({
                 success: false,

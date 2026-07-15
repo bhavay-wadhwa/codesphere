@@ -52,6 +52,8 @@ const getJudge0LanguageId = (language) => {
     return languageToJudge0Map[resolved] || null;
 };
 
+export { getJudge0LanguageId };
+
 const submitToJudge0 = async (languageId, sourceCode, stdin = "") => {
     try {
         // Submit code for execution
@@ -102,6 +104,8 @@ const submitToJudge0 = async (languageId, sourceCode, stdin = "") => {
         };
     }
 };
+
+export { submitToJudge0 };
 
 export const compileCode = async (req, res) => {
     try {

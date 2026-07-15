@@ -20,6 +20,23 @@ const roomSchema = new mongoose.Schema({
             ref: "User",
         }
     ],
+    // Explicit editors list: users who can type/run. Members not in this list are viewers.
+    editors: [
+        {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+        }
+    ],
+    // If locked, only `admin` and users in `editors` can edit/run code
+    isLocked: {
+        type: Boolean,
+        default: false,
+    },
+    // Mark when session has ended
+    ended: {
+        type: Boolean,
+        default: false,
+    },
     isVisible: {
         type: Boolean,
         required: true,
